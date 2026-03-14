@@ -2,7 +2,7 @@
   "name": "stint-vscode",
   "displayName": "Stint Time Tracker",
   "description": "Shows your current Stint time tracking status in the VS Code status bar.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "mosaic-ridge",
   "license": "MIT",
   "icon": "icon.png",
