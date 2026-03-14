@@ -29,6 +29,6 @@ clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
 dirs = "6"
 ratatui = "0.29"
-stint-core = { version = "0.1.0", path = "../stint-core" }
-stint-server = { version = "0.1.0", path = "../stint-server" }
+stint-core = { version = "0.2.0", path = "../stint-core" }
+stint-server = { version = "0.2.0", path = "../stint-server" }
 time = { version = "0.3", features = ["local-offset", "formatting"] }
