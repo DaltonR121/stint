@@ -10,6 +10,7 @@ description = "Core domain logic, data models, and storage traits for Stint"
 dirs = "6"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
 ulid = "1"

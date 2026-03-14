@@ -621,6 +621,7 @@ dependencies = [
  "dirs",
  "rusqlite",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "time",

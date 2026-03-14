@@ -20,4 +20,8 @@ pub enum StintError {
     /// No timer is currently running.
     #[error("no timer is currently running")]
     NoRunningTimer,
+
+    /// The project is archived and cannot be used for tracking.
+    #[error("project '{0}' is archived")]
+    ProjectNotActive(String),
 }
