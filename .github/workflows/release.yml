@@ -164,10 +164,16 @@ jobs:
           node-version: '20'
 
       - name: Install pnpm
-        run: npm install -g pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Build and publish extension
         run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::VSCE_PAT secret is not set"
+            exit 1
+          fi
           cd editors/vscode
           pnpm install
           pnpm run build
