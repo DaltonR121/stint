@@ -346,7 +346,7 @@ fn format_json(rows: &[ReportRow]) -> String {
 mod tests {
     use super::*;
     use crate::models::entry::{EntrySource, TimeEntry};
-    use crate::models::project::{Project, ProjectStatus};
+    use crate::models::project::{Project, ProjectSource, ProjectStatus};
     use crate::models::types::{EntryId, ProjectId};
     use std::path::PathBuf;
     use time::OffsetDateTime;
@@ -378,6 +378,7 @@ mod tests {
             tags: vec![],
             hourly_rate_cents: rate,
             status: ProjectStatus::Active,
+            source: ProjectSource::Manual,
             created_at: now,
             updated_at: now,
         }

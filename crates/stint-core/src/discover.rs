@@ -25,7 +25,7 @@ const MAX_DEPTH: usize = 10;
 pub fn discover_project(cwd: &Path) -> Option<DiscoveredProject> {
     let mut current = cwd.to_path_buf();
 
-    for _ in 0..MAX_DEPTH {
+    for _ in 0..=MAX_DEPTH {
         if current.join(".git").exists() {
             let name = current
                 .file_name()
@@ -85,6 +85,24 @@ mod tests {
         fs::create_dir_all(&sub).unwrap();
 
         assert!(discover_project(&sub).is_none());
+    }
+
+    #[test]
+    fn discovers_at_max_depth_boundary() {
+        let tmp = TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        // Build a path exactly MAX_DEPTH levels deep
+        let mut deep = project_dir.clone();
+        for i in 0..MAX_DEPTH {
+            deep = deep.join(format!("level{i}"));
+        }
+        fs::create_dir_all(&deep).unwrap();
+
+        let result = discover_project(&deep);
+        assert!(result.is_some(), "should discover at exactly MAX_DEPTH");
+        assert_eq!(result.unwrap().root, project_dir);
     }
 
     #[test]

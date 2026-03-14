@@ -95,6 +95,28 @@ enum Commands {
     /// Show what's currently being tracked.
     Status,
 
+    /// Quick summary of today's and this week's tracked time.
+    Summary,
+
+    /// Edit the most recent time entry.
+    Edit {
+        /// New duration (e.g., "2h30m"). Replaces the existing duration.
+        #[arg(short, long, value_parser = parse_duration_arg)]
+        duration: Option<i64>,
+
+        /// New notes. Replaces existing notes.
+        #[arg(short, long)]
+        notes: Option<String>,
+    },
+
+    /// Delete the most recent time entry.
+    #[command(name = "delete-entry")]
+    DeleteEntry {
+        /// Skip confirmation prompt.
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Add time retroactively.
     Add {
         /// Project name.
@@ -157,6 +179,12 @@ enum Commands {
         /// Filter by tag (can be specified multiple times).
         #[arg(short, long)]
         tag: Vec<String>,
+    },
+
+    /// Import time entries from a CSV file.
+    Import {
+        /// Path to the CSV file.
+        file: PathBuf,
     },
 
     /// Open the interactive dashboard.
@@ -382,6 +410,175 @@ fn cmd_status() {
     }
 }
 
+/// Handles the `summary` command — quick overview of today and this week.
+fn cmd_summary() {
+    let service = open_service();
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+
+    // Today
+    let today_start = now.date().midnight().assume_utc();
+    let today_filter = stint_core::models::entry::EntryFilter {
+        from: Some(today_start),
+        ..Default::default()
+    };
+    let today_entries = service.get_entries(&today_filter).unwrap_or_default();
+    let today_secs: i64 = today_entries
+        .iter()
+        .map(|(e, _)| e.computed_duration_secs().unwrap_or(0))
+        .sum();
+    let today_count = today_entries.len();
+
+    // This week (Monday to now)
+    let weekday = now.weekday().number_days_from_monday();
+    let week_start = today_start - time::Duration::days(weekday as i64);
+    let week_filter = stint_core::models::entry::EntryFilter {
+        from: Some(week_start),
+        ..Default::default()
+    };
+    let week_entries = service.get_entries(&week_filter).unwrap_or_default();
+    let week_secs: i64 = week_entries
+        .iter()
+        .map(|(e, _)| e.computed_duration_secs().unwrap_or(0))
+        .sum();
+    let week_count = week_entries.len();
+
+    // Currently tracking
+    let status = match service.get_status() {
+        Ok(Some((entry, project))) => {
+            let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();
+            format!(
+                "Tracking '{}' for {}",
+                project.name,
+                format_duration_human(elapsed)
+            )
+        }
+        _ => "Idle".to_string(),
+    };
+
+    println!("  {status}");
+    println!(
+        "  Today: {}  ({} entries)",
+        format_duration_human(today_secs),
+        today_count
+    );
+    println!(
+        "  Week:  {}  ({} entries)",
+        format_duration_human(week_secs),
+        week_count
+    );
+}
+
+/// Handles the `edit` command — modifies the most recent entry.
+fn cmd_edit(duration: Option<i64>, notes: Option<String>) {
+    let service = open_service();
+    let (mut entry, project) = match service.get_last_entry() {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            println!("No entries to edit.");
+            return;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    let mut changed = false;
+
+    if let Some(dur) = duration {
+        entry.duration_secs = Some(dur);
+        if let Some(start) = Some(entry.start) {
+            entry.end = Some(start + time::Duration::seconds(dur));
+        }
+        changed = true;
+    }
+
+    if let Some(n) = notes {
+        entry.notes = if n.is_empty() { None } else { Some(n) };
+        changed = true;
+    }
+
+    if !changed {
+        println!("Nothing to change. Use --duration or --notes.");
+        return;
+    }
+
+    entry.updated_at = OffsetDateTime::now_utc();
+    match service.update_entry(&entry) {
+        Ok(()) => {
+            let dur_str = entry
+                .duration_secs
+                .map(format_duration_human)
+                .unwrap_or_else(|| "running".to_string());
+            println!("Updated entry: '{}' {}", project.name, dur_str);
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `delete-entry` command — deletes the most recent entry.
+fn cmd_delete_entry(force: bool) {
+    let service = open_service();
+    let (entry, project) = match service.get_last_entry() {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            println!("No entries to delete.");
+            return;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    let dur_str = entry
+        .computed_duration_secs()
+        .map(format_duration_human)
+        .unwrap_or_else(|| "running".to_string());
+
+    if !force {
+        print!(
+            "Delete entry: '{}' {} ({})? [y/N] ",
+            project.name,
+            dur_str,
+            entry.start.date()
+        );
+        if let Err(e) = io::stdout().flush() {
+            eprintln!("error: failed to flush stdout: {e}");
+            process::exit(1);
+        }
+
+        let mut input = String::new();
+        match io::stdin().read_line(&mut input) {
+            Ok(0) => {
+                println!("Cancelled.");
+                return;
+            }
+            Err(e) => {
+                eprintln!("error: failed to read input: {e}");
+                process::exit(1);
+            }
+            Ok(_) => {}
+        }
+
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Cancelled.");
+            return;
+        }
+    }
+
+    match service.delete_entry(&entry.id) {
+        Ok(()) => println!("Deleted entry: '{}' {}", project.name, dur_str),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 /// Handles the `add` command.
 fn cmd_add(project: String, duration_secs: i64, date: Option<String>, notes: Option<String>) {
     let now = now_local();
@@ -487,6 +684,23 @@ fn cmd_report(
     print!("{}", format_report(&result, &fmt));
 }
 
+/// Handles the `import` command.
+fn cmd_import(file: PathBuf) {
+    let storage = open_storage();
+    match stint_core::import::import_csv(&storage, &file) {
+        Ok(result) => {
+            println!(
+                "Imported {} entries ({} projects created, {} rows skipped)",
+                result.entries_imported, result.projects_created, result.rows_skipped
+            );
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 /// Handles the `project add` command.
 fn cmd_project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<i64>) {
     // Validate path before opening the database
@@ -518,6 +732,7 @@ fn cmd_project_add(name: String, path: Option<PathBuf>, tags: Option<String>, ra
         tags: parsed_tags,
         hourly_rate_cents: rate,
         status: ProjectStatus::Active,
+        source: stint_core::models::project::ProjectSource::Manual,
         created_at: now,
         updated_at: now,
     };
@@ -684,13 +899,16 @@ fn cmd_project_ignore(path: PathBuf) {
 
 /// Handles the `project unignore` command.
 fn cmd_project_unignore(path: PathBuf) {
-    let resolved = match path.canonicalize() {
-        Ok(abs) => abs,
-        Err(e) => {
-            eprintln!("error: invalid path '{}': {e}", path.display());
-            process::exit(1);
+    // Try canonicalize first, fall back to absolute path if the directory no longer exists
+    let resolved = path.canonicalize().unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.clone()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(&path)
         }
-    };
+    });
 
     let storage = open_storage();
     match storage.remove_ignored_path(&resolved) {
@@ -709,10 +927,11 @@ fn cmd_hook(cwd: PathBuf, pid: u32, shell: Option<String>, exit: bool) {
         Ok(s) => s,
         Err(_) => return, // Silently bail — DB doesn't exist yet or can't open
     };
+    let config = stint_core::config::StintConfig::load();
     if exit {
-        let _ = hook::handle_hook_exit(&storage, pid);
+        let _ = hook::handle_hook_exit(&storage, pid, &config);
     } else {
-        let _ = hook::handle_hook(&storage, pid, &cwd, shell.as_deref());
+        let _ = hook::handle_hook(&storage, pid, &cwd, shell.as_deref(), &config);
     }
 }
 
@@ -828,6 +1047,7 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Import { file } => cmd_import(file),
         Commands::Dashboard => {
             if let Err(e) = tui::run() {
                 eprintln!("error: {e}");
@@ -837,6 +1057,9 @@ fn main() {
         Commands::Start { project } => cmd_start(project),
         Commands::Stop => cmd_stop(),
         Commands::Status => cmd_status(),
+        Commands::Summary => cmd_summary(),
+        Commands::Edit { duration, notes } => cmd_edit(duration, notes),
+        Commands::DeleteEntry { force } => cmd_delete_entry(force),
         Commands::Add {
             project,
             duration,

@@ -7,7 +7,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::models::entry::{EntryFilter, EntrySource, TimeEntry};
-use crate::models::project::{Project, ProjectStatus};
+use crate::models::project::{Project, ProjectSource, ProjectStatus};
 use crate::models::session::ShellSession;
 use crate::models::types::{EntryId, ProjectId, SessionId};
 
@@ -317,10 +317,12 @@ impl SqliteStorage {
         let name: String = row.get("name")?;
         let hourly_rate_cents: Option<i64> = row.get("hourly_rate_cents")?;
         let status_str: String = row.get("status")?;
+        let source_str: String = row.get("source").unwrap_or_else(|_| "manual".to_string());
         let created_at_str: String = row.get("created_at")?;
         let updated_at_str: String = row.get("updated_at")?;
 
         let status = ProjectStatus::from_str_value(&status_str).unwrap_or(ProjectStatus::Active);
+        let source = ProjectSource::from_str_value(&source_str);
         let created_at =
             OffsetDateTime::parse(&created_at_str, &Rfc3339).unwrap_or(OffsetDateTime::UNIX_EPOCH);
         let updated_at =
@@ -333,6 +335,7 @@ impl SqliteStorage {
             tags: vec![],  // loaded separately
             hourly_rate_cents,
             status,
+            source,
             created_at,
             updated_at,
         })
@@ -442,13 +445,14 @@ impl Storage for SqliteStorage {
         }
 
         tx.execute(
-            "INSERT INTO projects (id, name, hourly_rate_cents, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO projects (id, name, hourly_rate_cents, status, source, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 project.id.as_str(),
                 &project.name,
                 project.hourly_rate_cents,
                 project.status.as_str(),
+                project.source.as_str(),
                 Self::fmt_ts(&project.created_at),
                 Self::fmt_ts(&project.updated_at),
             ],
@@ -945,6 +949,7 @@ mod tests {
             tags: vec![],
             hourly_rate_cents: None,
             status: ProjectStatus::Active,
+            source: ProjectSource::Manual,
             created_at: now,
             updated_at: now,
         }
