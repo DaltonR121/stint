@@ -51,6 +51,12 @@ pub trait Storage {
     /// Finds the currently running entry for a specific project.
     fn get_running_entry(&self, project_id: &ProjectId) -> Result<Option<TimeEntry>, StorageError>;
 
+    /// Finds the currently running hook-sourced entry for a specific project.
+    fn get_running_hook_entry(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<Option<TimeEntry>, StorageError>;
+
     /// Finds any currently running entry across all projects.
     fn get_any_running_entry(&self) -> Result<Option<TimeEntry>, StorageError>;
 
@@ -76,4 +82,17 @@ pub trait Storage {
 
     /// Marks a session as ended.
     fn end_session(&self, id: &SessionId, ended_at: OffsetDateTime) -> Result<(), StorageError>;
+
+    /// Counts active sessions tracking a given project, excluding a specific session.
+    fn count_active_sessions_for_project(
+        &self,
+        project_id: &ProjectId,
+        exclude_session_id: &SessionId,
+    ) -> Result<usize, StorageError>;
+
+    /// Finds active sessions whose last heartbeat is older than the given time.
+    fn get_stale_sessions(
+        &self,
+        older_than: OffsetDateTime,
+    ) -> Result<Vec<ShellSession>, StorageError>;
 }

@@ -7,6 +7,7 @@ use std::process;
 use clap::{Parser, Subcommand};
 use stint_core::dateparse::parse_date;
 use stint_core::duration::{format_duration_human, parse_duration};
+use stint_core::hook;
 use stint_core::models::entry::EntryFilter;
 use stint_core::models::project::{Project, ProjectStatus};
 use stint_core::models::types::ProjectId;
@@ -160,6 +161,32 @@ enum Commands {
     Project {
         #[command(subcommand)]
         command: ProjectCommands,
+    },
+
+    /// Output shell hook script for eval.
+    Shell {
+        /// Shell type: bash, zsh, or fish.
+        shell: String,
+    },
+
+    /// Internal: called by shell hooks on every prompt render.
+    #[command(name = "_hook", hide = true)]
+    Hook {
+        /// Current working directory.
+        #[arg(long)]
+        cwd: PathBuf,
+
+        /// Shell PID.
+        #[arg(long)]
+        pid: u32,
+
+        /// Shell type (bash, zsh, fish).
+        #[arg(long)]
+        shell: Option<String>,
+
+        /// Signal that the shell is exiting.
+        #[arg(long)]
+        exit: bool,
     },
 }
 
@@ -606,6 +633,66 @@ fn cmd_project_delete(name: String, force: bool) {
     }
 }
 
+/// Handles the `_hook` command (called by shell hooks).
+///
+/// Must never call process::exit or print to stdout/stderr — the hook
+/// must be invisible to the user's shell. Uses open_existing to skip
+/// directory creation and migrations for <2ms performance.
+fn cmd_hook(cwd: PathBuf, pid: u32, shell: Option<String>, exit: bool) {
+    let path = SqliteStorage::default_path();
+    let storage = match SqliteStorage::open_existing(&path) {
+        Ok(s) => s,
+        Err(_) => return, // Silently bail — DB doesn't exist yet or can't open
+    };
+    if exit {
+        let _ = hook::handle_hook_exit(&storage, pid);
+    } else {
+        let _ = hook::handle_hook(&storage, pid, &cwd, shell.as_deref());
+    }
+}
+
+/// Handles the `shell` command — outputs hook script for eval.
+fn cmd_shell(shell: String) {
+    let script = match shell.to_lowercase().as_str() {
+        "bash" => {
+            r#"_stint_hook() {
+    stint _hook --cwd "$PWD" --pid $$ --shell bash
+}
+_stint_exit() {
+    stint _hook --cwd "$PWD" --pid $$ --shell bash --exit
+}
+PROMPT_COMMAND="_stint_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+trap '_stint_exit' EXIT
+"#
+        }
+        "zsh" => {
+            r#"_stint_hook() {
+    stint _hook --cwd "$PWD" --pid $$ --shell zsh
+}
+_stint_exit() {
+    stint _hook --cwd "$PWD" --pid $$ --shell zsh --exit
+}
+precmd_functions+=(_stint_hook)
+zshexit_functions+=(_stint_exit)
+"#
+        }
+        "fish" => {
+            r#"function _stint_hook --on-event fish_prompt
+    stint _hook --cwd "$PWD" --pid %self --shell fish
+end
+function _stint_exit --on-event fish_exit
+    stint _hook --cwd "$PWD" --pid %self --shell fish --exit
+end
+"#
+        }
+        _ => {
+            eprintln!("error: unsupported shell '{shell}' (use bash, zsh, or fish)");
+            process::exit(1);
+        }
+    };
+    print!("{script}");
+}
+
 /// Entry point.
 fn main() {
     let cli = Cli::parse();
@@ -645,5 +732,12 @@ fn main() {
             ProjectCommands::Archive { name } => cmd_project_archive(name),
             ProjectCommands::Delete { name, force } => cmd_project_delete(name, force),
         },
+        Commands::Shell { shell } => cmd_shell(shell),
+        Commands::Hook {
+            cwd,
+            pid,
+            shell,
+            exit,
+        } => cmd_hook(cwd, pid, shell, exit),
     }
 }

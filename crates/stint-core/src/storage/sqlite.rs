@@ -16,7 +16,7 @@ use super::Storage;
 
 /// Current schema version. Increment when adding migrations.
 #[cfg(test)]
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// SQLite-backed storage for Stint.
 pub struct SqliteStorage {
@@ -35,6 +35,22 @@ impl SqliteStorage {
         let storage = Self { conn };
         storage.migrate()?;
         Ok(storage)
+    }
+
+    /// Opens an existing database without creating directories or running migrations.
+    ///
+    /// Returns `Err` if the database file does not exist or cannot be opened.
+    /// Intended for the shell hook fast path where the DB should already exist.
+    pub fn open_existing(path: &Path) -> Result<Self, StorageError> {
+        if !path.exists() {
+            return Err(StorageError::Migration(
+                "database does not exist".to_string(),
+            ));
+        }
+        let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        Ok(Self { conn })
     }
 
     /// Opens an in-memory database for testing.
@@ -81,6 +97,9 @@ impl SqliteStorage {
 
         if current_version < 1 {
             self.migrate_v1()?;
+        }
+        if current_version < 2 {
+            self.migrate_v2()?;
         }
 
         Ok(())
@@ -160,6 +179,24 @@ impl SqliteStorage {
                 ON sessions(pid) WHERE ended_at IS NULL;
 
             INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '1');",
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration v2: indexes for session and hook queries.
+    fn migrate_v2(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_active_project
+                ON sessions(current_project_id) WHERE ended_at IS NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_sessions_active_heartbeat
+                ON sessions(last_heartbeat) WHERE ended_at IS NULL;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_one_running_per_project
+                ON entries(project_id) WHERE end_time IS NULL;
+
+            INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '2');",
         )?;
 
         Ok(())
@@ -590,6 +627,25 @@ impl Storage for SqliteStorage {
         }
     }
 
+    fn get_running_hook_entry(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<Option<TimeEntry>, StorageError> {
+        let entry = self
+            .conn
+            .query_row(
+                "SELECT * FROM entries WHERE project_id = ?1 AND end_time IS NULL AND source = 'hook' LIMIT 1",
+                params![project_id.as_str()],
+                |row| self.entry_from_row(row),
+            )
+            .optional()?;
+
+        match entry {
+            Some(e) => Ok(Some(self.hydrate_entry(e)?)),
+            None => Ok(None),
+        }
+    }
+
     fn get_any_running_entry(&self) -> Result<Option<TimeEntry>, StorageError> {
         let entry = self
             .conn
@@ -778,6 +834,35 @@ impl Storage for SqliteStorage {
 
         Ok(())
     }
+
+    fn count_active_sessions_for_project(
+        &self,
+        project_id: &ProjectId,
+        exclude_session_id: &SessionId,
+    ) -> Result<usize, StorageError> {
+        let count: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM sessions
+             WHERE current_project_id = ?1 AND ended_at IS NULL AND id != ?2",
+            params![project_id.as_str(), exclude_session_id.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    fn get_stale_sessions(
+        &self,
+        older_than: OffsetDateTime,
+    ) -> Result<Vec<ShellSession>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM sessions WHERE ended_at IS NULL AND last_heartbeat < ?1")?;
+        let sessions = stmt
+            .query_map(params![Self::fmt_ts(&older_than)], |row| {
+                self.session_from_row(row)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(sessions)
+    }
 }
 
 #[cfg(test)]
@@ -803,13 +888,14 @@ mod tests {
     /// Creates a test entry with sensible defaults.
     fn test_entry(project_id: &ProjectId, start: OffsetDateTime) -> TimeEntry {
         let now = OffsetDateTime::now_utc();
+        let end = start + time::Duration::hours(1);
         TimeEntry {
             id: EntryId::new(),
             project_id: project_id.clone(),
             session_id: None,
             start,
-            end: None,
-            duration_secs: None,
+            end: Some(end),
+            duration_secs: Some(3600),
             source: EntrySource::Manual,
             notes: None,
             tags: vec![],
@@ -1068,7 +1154,6 @@ mod tests {
         assert_eq!(loaded.project_id, project.id);
         assert_eq!(loaded.tags, vec!["bugfix"]);
         assert_eq!(loaded.notes.as_deref(), Some("Fixed the login bug"));
-        assert!(loaded.is_running());
     }
 
     #[test]
@@ -1077,7 +1162,9 @@ mod tests {
         let project = test_project("my-app", vec![]);
         storage.create_project(&project).unwrap();
 
-        let entry = test_entry(&project.id, datetime!(2026-01-01 9:00 UTC));
+        let mut entry = test_entry(&project.id, datetime!(2026-01-01 9:00 UTC));
+        entry.end = None;
+        entry.duration_secs = None;
         storage.create_entry(&entry).unwrap();
 
         let running = storage.get_running_entry(&project.id).unwrap().unwrap();
@@ -1107,7 +1194,9 @@ mod tests {
         storage.create_project(&p1).unwrap();
         storage.create_project(&p2).unwrap();
 
-        let entry = test_entry(&p2.id, datetime!(2026-01-01 9:00 UTC));
+        let mut entry = test_entry(&p2.id, datetime!(2026-01-01 9:00 UTC));
+        entry.end = None;
+        entry.duration_secs = None;
         storage.create_entry(&entry).unwrap();
 
         let running = storage.get_any_running_entry().unwrap().unwrap();
