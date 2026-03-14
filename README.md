@@ -2,7 +2,7 @@
 
 > **Terminal-native project time tracking that starts when you do.**
 
-[![Status: Alpha](https://img.shields.io/badge/status-alpha-yellow)]()
+![Status: Alpha](https://img.shields.io/badge/status-alpha-yellow)
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
 
 Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the last terminal — it stops. No buttons to click, no browser tabs to manage.
