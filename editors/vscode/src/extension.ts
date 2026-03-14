@@ -89,13 +89,12 @@ async function updateStatus(): Promise<void> {
     const config = vscode.workspace.getConfiguration('stint');
     const apiUrl = config.get<string>('apiUrl', 'http://127.0.0.1:7653');
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
         const response = await fetch(`${apiUrl}/api/status`, {
             signal: controller.signal,
         });
-        clearTimeout(timeout);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
@@ -118,6 +117,8 @@ async function updateStatus(): Promise<void> {
         statusBarItem.text = `$(clock) stint starting...`;
         statusBarItem.tooltip = 'Stint: starting API server...';
         statusBarItem.color = undefined;
+    } finally {
+        clearTimeout(timeout);
     }
 }
 

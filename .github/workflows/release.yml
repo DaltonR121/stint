@@ -124,6 +124,9 @@ jobs:
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
 
+      - name: Install apt tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils dpkg-dev
+
       - name: Update apt repository
         run: |
           mkdir -p pool/main/s/stint
@@ -134,7 +137,16 @@ jobs:
           gzip -kf dists/stable/main/binary-amd64/Packages
 
           cd dists/stable
-          apt-ftparchive release . > Release
+          cat > apt-release.conf <<CONF
+          APT::FTPArchive::Release::Origin "Mosaic Ridge LLC";
+          APT::FTPArchive::Release::Label "Stint";
+          APT::FTPArchive::Release::Suite "stable";
+          APT::FTPArchive::Release::Codename "stable";
+          APT::FTPArchive::Release::Components "main";
+          APT::FTPArchive::Release::Architectures "amd64";
+          CONF
+          apt-ftparchive -c apt-release.conf release . > Release
+          rm apt-release.conf
           gpg --batch --yes --armor --detach-sign -o Release.gpg Release
           gpg --batch --yes --clearsign -o InRelease Release
 
@@ -142,6 +154,13 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          rm -rf incoming/
           git add -A
-          git commit -m "Update apt repo for ${{ github.ref_name }}" || true
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update apt repo for ${{ github.ref_name }}"
+          git fetch origin gh-pages
+          git rebase origin/gh-pages
+          git push origin HEAD:gh-pages --force-with-lease
