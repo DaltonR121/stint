@@ -5,15 +5,15 @@ use std::str::FromStr;
 
 /// A ULID-based unique identifier for projects.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ProjectId(pub String);
+pub struct ProjectId(String);
 
 /// A ULID-based unique identifier for time entries.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct EntryId(pub String);
+pub struct EntryId(String);
 
 /// A ULID-based unique identifier for shell sessions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct SessionId(pub String);
+pub struct SessionId(String);
 
 macro_rules! impl_id {
     ($ty:ident) => {
@@ -26,6 +26,14 @@ macro_rules! impl_id {
             /// Returns the inner string slice.
             pub fn as_str(&self) -> &str {
                 &self.0
+            }
+
+            /// Constructs an ID from a stored string value without validation.
+            ///
+            /// This is intended for use by the storage layer when loading values
+            /// that were previously validated on insert.
+            pub(crate) fn from_storage(s: String) -> Self {
+                Self(s)
             }
         }
 
@@ -49,12 +57,6 @@ macro_rules! impl_id {
                 ulid::Ulid::from_string(s)
                     .map(|u| Self(u.to_string()))
                     .map_err(|e| format!("invalid ULID: {e}"))
-            }
-        }
-
-        impl From<String> for $ty {
-            fn from(s: String) -> Self {
-                Self(s)
             }
         }
     };
@@ -104,5 +106,13 @@ mod tests {
         let pid = ProjectId::new();
         let eid = EntryId::new();
         assert_ne!(pid.as_str(), eid.as_str());
+    }
+
+    #[test]
+    fn from_storage_preserves_value() {
+        let id = ProjectId::new();
+        let raw = id.as_str().to_owned();
+        let restored = ProjectId::from_storage(raw.clone());
+        assert_eq!(restored.as_str(), raw);
     }
 }

@@ -10,6 +10,46 @@ use stint_core::storage::sqlite::SqliteStorage;
 use stint_core::storage::Storage;
 use time::OffsetDateTime;
 
+/// Parses a dollar amount string into integer cents using exact string math.
+///
+/// Accepts formats like "150", "150.00", "19.99". Rejects negative values
+/// and malformed input. Returns cents as i64.
+fn parse_cents(s: &str) -> Result<i64, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("rate cannot be empty".to_string());
+    }
+    if s.starts_with('-') {
+        return Err("rate cannot be negative".to_string());
+    }
+
+    let (dollars_str, cents_str) = if let Some((d, c)) = s.split_once('.') {
+        (d, c)
+    } else {
+        (s, "")
+    };
+
+    let dollars: i64 = dollars_str
+        .parse()
+        .map_err(|_| format!("invalid rate: '{s}'"))?;
+
+    let cents: i64 = match cents_str.len() {
+        0 => 0,
+        1 => {
+            cents_str
+                .parse::<i64>()
+                .map_err(|_| format!("invalid rate: '{s}'"))?
+                * 10
+        }
+        2 => cents_str
+            .parse()
+            .map_err(|_| format!("invalid rate: '{s}'"))?,
+        _ => return Err(format!("rate has too many decimal places: '{s}'")),
+    };
+
+    Ok(dollars * 100 + cents)
+}
+
 /// Terminal-native project time tracker.
 #[derive(Parser)]
 #[command(name = "stint", version, about)]
@@ -45,8 +85,8 @@ enum ProjectCommands {
         tags: Option<String>,
 
         /// Hourly rate in dollars (e.g., 150.00).
-        #[arg(long)]
-        rate: Option<f64>,
+        #[arg(long, value_parser = parse_cents)]
+        rate: Option<i64>,
     },
 
     /// List registered projects.
@@ -70,7 +110,7 @@ fn open_storage() -> SqliteStorage {
 }
 
 /// Handles the `project add` command.
-fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<f64>) {
+fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<i64>) {
     let storage = open_storage();
 
     let paths = match path {
@@ -91,7 +131,7 @@ fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: 
         .map(|t| stint_core::models::tag::parse_tags(&t))
         .unwrap_or_default();
 
-    let hourly_rate_cents = rate.map(|r| (r * 100.0) as i64);
+    let hourly_rate_cents = rate;
 
     let now = OffsetDateTime::now_utc();
     let project = Project {

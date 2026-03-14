@@ -91,7 +91,7 @@ impl SqliteStorage {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS projects (
                 id               TEXT PRIMARY KEY,
-                name             TEXT NOT NULL UNIQUE,
+                name             TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 hourly_rate_cents INTEGER,
                 status           TEXT NOT NULL DEFAULT 'active'
                                      CHECK(status IN ('active', 'archived')),
@@ -156,7 +156,7 @@ impl SqliteStorage {
                 ended_at            TEXT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_sessions_pid
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_pid
                 ON sessions(pid) WHERE ended_at IS NULL;
 
             INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '1');",
@@ -203,53 +203,53 @@ impl SqliteStorage {
         Ok(tags)
     }
 
-    /// Saves paths for a project, replacing any existing paths.
-    fn save_project_paths(
-        &self,
+    /// Saves paths for a project within a transaction, replacing any existing paths.
+    fn save_project_paths_tx(
+        conn: &Connection,
         project_id: &ProjectId,
         paths: &[PathBuf],
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        conn.execute(
             "DELETE FROM project_paths WHERE project_id = ?1",
             params![project_id.as_str()],
         )?;
-        let mut stmt = self
-            .conn
-            .prepare("INSERT INTO project_paths (project_id, path) VALUES (?1, ?2)")?;
+        let mut stmt =
+            conn.prepare("INSERT INTO project_paths (project_id, path) VALUES (?1, ?2)")?;
         for path in paths {
             stmt.execute(params![project_id.as_str(), path.to_string_lossy()])?;
         }
         Ok(())
     }
 
-    /// Saves tags for a project, replacing any existing tags.
-    fn save_project_tags(
-        &self,
+    /// Saves tags for a project within a transaction, replacing any existing tags.
+    fn save_project_tags_tx(
+        conn: &Connection,
         project_id: &ProjectId,
         tags: &[String],
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        conn.execute(
             "DELETE FROM project_tags WHERE project_id = ?1",
             params![project_id.as_str()],
         )?;
-        let mut stmt = self
-            .conn
-            .prepare("INSERT INTO project_tags (project_id, tag) VALUES (?1, ?2)")?;
+        let mut stmt =
+            conn.prepare("INSERT INTO project_tags (project_id, tag) VALUES (?1, ?2)")?;
         for tag in tags {
             stmt.execute(params![project_id.as_str(), tag])?;
         }
         Ok(())
     }
 
-    /// Saves tags for an entry, replacing any existing tags.
-    fn save_entry_tags(&self, entry_id: &EntryId, tags: &[String]) -> Result<(), StorageError> {
-        self.conn.execute(
+    /// Saves tags for an entry within a transaction, replacing any existing tags.
+    fn save_entry_tags_tx(
+        conn: &Connection,
+        entry_id: &EntryId,
+        tags: &[String],
+    ) -> Result<(), StorageError> {
+        conn.execute(
             "DELETE FROM entry_tags WHERE entry_id = ?1",
             params![entry_id.as_str()],
         )?;
-        let mut stmt = self
-            .conn
-            .prepare("INSERT INTO entry_tags (entry_id, tag) VALUES (?1, ?2)")?;
+        let mut stmt = conn.prepare("INSERT INTO entry_tags (entry_id, tag) VALUES (?1, ?2)")?;
         for tag in tags {
             stmt.execute(params![entry_id.as_str(), tag])?;
         }
@@ -272,7 +272,7 @@ impl SqliteStorage {
             OffsetDateTime::parse(&updated_at_str, &Rfc3339).unwrap_or(OffsetDateTime::UNIX_EPOCH);
 
         Ok(Project {
-            id: ProjectId::from(id),
+            id: ProjectId::from_storage(id),
             name,
             paths: vec![], // loaded separately
             tags: vec![],  // loaded separately
@@ -313,9 +313,9 @@ impl SqliteStorage {
             OffsetDateTime::parse(&updated_at_str, &Rfc3339).unwrap_or(OffsetDateTime::UNIX_EPOCH);
 
         Ok(TimeEntry {
-            id: EntryId::from(id),
-            project_id: ProjectId::from(project_id),
-            session_id: session_id.map(SessionId::from),
+            id: EntryId::from_storage(id),
+            project_id: ProjectId::from_storage(project_id),
+            session_id: session_id.map(SessionId::from_storage),
             start,
             end,
             duration_secs,
@@ -351,11 +351,11 @@ impl SqliteStorage {
         let ended_at = ended_at_str.and_then(|s| OffsetDateTime::parse(&s, &Rfc3339).ok());
 
         Ok(ShellSession {
-            id: SessionId::from(id),
+            id: SessionId::from_storage(id),
             pid,
             shell,
             cwd: PathBuf::from(cwd),
-            current_project_id: current_project_id.map(ProjectId::from),
+            current_project_id: current_project_id.map(ProjectId::from_storage),
             started_at,
             last_heartbeat,
             ended_at,
@@ -372,9 +372,10 @@ impl Storage for SqliteStorage {
     // --- Projects ---
 
     fn create_project(&self, project: &Project) -> Result<(), StorageError> {
+        let tx = self.conn.unchecked_transaction()?;
+
         // Check for duplicate name
-        let existing: Option<String> = self
-            .conn
+        let existing: Option<String> = tx
             .query_row(
                 "SELECT id FROM projects WHERE name = ?1 COLLATE NOCASE",
                 params![&project.name],
@@ -385,7 +386,7 @@ impl Storage for SqliteStorage {
             return Err(StorageError::DuplicateProjectName(project.name.clone()));
         }
 
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO projects (id, name, hourly_rate_cents, status, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -398,9 +399,10 @@ impl Storage for SqliteStorage {
             ],
         )?;
 
-        self.save_project_paths(&project.id, &project.paths)?;
-        self.save_project_tags(&project.id, &project.tags)?;
+        Self::save_project_paths_tx(&tx, &project.id, &project.paths)?;
+        Self::save_project_tags_tx(&tx, &project.id, &project.tags)?;
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -446,7 +448,9 @@ impl Storage for SqliteStorage {
             .query_row(
                 "SELECT p.* FROM projects p
                  JOIN project_paths pp ON p.id = pp.project_id
-                 WHERE ?1 = pp.path OR ?1 LIKE pp.path || '/%'
+                 WHERE ?1 = pp.path
+                    OR (LENGTH(?1) > LENGTH(pp.path)
+                        AND SUBSTR(?1, 1, LENGTH(pp.path) + 1) = pp.path || '/')
                  ORDER BY LENGTH(pp.path) DESC
                  LIMIT 1",
                 params![path_str],
@@ -486,7 +490,9 @@ impl Storage for SqliteStorage {
     }
 
     fn update_project(&self, project: &Project) -> Result<(), StorageError> {
-        let changed = self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+
+        let changed = tx.execute(
             "UPDATE projects SET name = ?1, hourly_rate_cents = ?2, status = ?3, updated_at = ?4
              WHERE id = ?5",
             params![
@@ -502,9 +508,10 @@ impl Storage for SqliteStorage {
             return Err(StorageError::ProjectNotFound(project.id.to_string()));
         }
 
-        self.save_project_paths(&project.id, &project.paths)?;
-        self.save_project_tags(&project.id, &project.tags)?;
+        Self::save_project_paths_tx(&tx, &project.id, &project.paths)?;
+        Self::save_project_tags_tx(&tx, &project.id, &project.tags)?;
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -523,9 +530,10 @@ impl Storage for SqliteStorage {
     // --- Time Entries ---
 
     fn create_entry(&self, entry: &TimeEntry) -> Result<(), StorageError> {
+        let tx = self.conn.unchecked_transaction()?;
         let end_str = entry.end.as_ref().map(Self::fmt_ts);
 
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO entries
                 (id, project_id, session_id, start, end_time, duration_secs, source, notes,
                  created_at, updated_at)
@@ -544,8 +552,9 @@ impl Storage for SqliteStorage {
             ],
         )?;
 
-        self.save_entry_tags(&entry.id, &entry.tags)?;
+        Self::save_entry_tags_tx(&tx, &entry.id, &entry.tags)?;
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -646,9 +655,10 @@ impl Storage for SqliteStorage {
     }
 
     fn update_entry(&self, entry: &TimeEntry) -> Result<(), StorageError> {
+        let tx = self.conn.unchecked_transaction()?;
         let end_str = entry.end.as_ref().map(Self::fmt_ts);
 
-        let changed = self.conn.execute(
+        let changed = tx.execute(
             "UPDATE entries SET project_id = ?1, session_id = ?2, start = ?3, end_time = ?4,
                 duration_secs = ?5, source = ?6, notes = ?7, updated_at = ?8
              WHERE id = ?9",
@@ -669,8 +679,9 @@ impl Storage for SqliteStorage {
             return Err(StorageError::EntryNotFound(entry.id.to_string()));
         }
 
-        self.save_entry_tags(&entry.id, &entry.tags)?;
+        Self::save_entry_tags_tx(&tx, &entry.id, &entry.tags)?;
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -689,7 +700,19 @@ impl Storage for SqliteStorage {
     // --- Sessions ---
 
     fn upsert_session(&self, session: &ShellSession) -> Result<(), StorageError> {
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+
+        // Close any existing active session with the same PID (handles PID reuse)
+        tx.execute(
+            "UPDATE sessions SET ended_at = ?1 WHERE pid = ?2 AND ended_at IS NULL AND id != ?3",
+            params![
+                Self::fmt_ts(&session.started_at),
+                session.pid,
+                session.id.as_str(),
+            ],
+        )?;
+
+        tx.execute(
             "INSERT INTO sessions
                 (id, pid, shell, cwd, current_project_id, started_at, last_heartbeat, ended_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
@@ -713,6 +736,7 @@ impl Storage for SqliteStorage {
             ],
         )?;
 
+        tx.commit()?;
         Ok(())
     }
 
