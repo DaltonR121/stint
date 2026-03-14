@@ -1,11 +1,14 @@
 # Stint
 
-> **Terminal-native project time tracking that starts when you do.**
+> **I forgot to start my timer for the 100th time. So I built one that doesn't need starting.**
 
 ![Status: Alpha](https://img.shields.io/badge/status-alpha-yellow)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![crates.io](https://img.shields.io/crates/v/stint-cli)](https://crates.io/crates/stint-cli)
 
 Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the last terminal — it stops. No buttons to click, no browser tabs to manage.
+
+**Works across multiple projects simultaneously** — each terminal tracks its own project independently.
 
 ## Why Stint?
 
@@ -13,66 +16,46 @@ Most developer time trackers require you to remember to start and stop timers. Y
 
 Stint takes a different approach: it hooks into your shell prompt so tracking happens transparently as you work. You can also start/stop manually or add time retroactively — but the default path is zero friction.
 
-## Features
-
-### Available Now
-- **Zero-config auto-tracking** — auto-discovers `.git` repos and tracks time via shell hooks, no manual setup needed
-- **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
-- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically (recommended)
-- **Multi-shell support** — bash, zsh, and fish via `stint shell <type>` (advanced/manual hook installation)
-- **Multi-terminal handling** — merge mode keeps one timer per project across terminals
-- **Idle detection** — configurable auto-pause (default 5 minutes), resumes on next prompt
-- **Project management** — register projects with paths, tags, and hourly rates; archive, delete, ignore
-- **Rich reporting** — grouped by project or tag, with table/CSV/JSON/Markdown export and earnings calculation
-- **Quick summary** — `stint summary` for a one-line overview of today and this week
-- **Entry editing** — `stint edit` and `stint delete-entry` to fix the most recent entry
-- **CSV import** — `stint import <file.csv>` for one-time migration from Toggl, Clockify, or any tracker
-- **TUI dashboard** — `stint dashboard` with live timer, today's entries, and weekly project totals
-- **Configurable** — `~/.config/stint/config.toml` for idle threshold, default rate, default tags, and auto-discovery toggle
-- **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
-
-### Planned
-- **Invoicing** — `stint invoice <project>` to generate invoices directly from tracked time
-- **VS Code & Neovim extensions** — see your current project and timer in the editor status bar
-- **Local API** — HTTP API on localhost for editor plugins and custom integrations
-- **Apt repository** — `sudo apt install stint` for one-command installation and upgrades
-- **Optional cloud sync** — self-hostable web dashboard with team features
-
 ## Install
 
-### From GitHub Releases (recommended)
+### One-liner (Linux & macOS)
 
-Download the latest binary for your platform from [GitHub Releases](https://github.com/DaltonR121/stint/releases):
+The install script detects your OS and package manager — on Debian/Ubuntu it sets up the apt repository for future upgrades, on other systems it downloads the binary from GitHub Releases.
 
 ```sh
-# Linux (x86_64) — tarball
-curl -LO https://github.com/DaltonR121/stint/releases/latest/download/stint-x86_64-unknown-linux-gnu.tar.gz
-tar xzf stint-x86_64-unknown-linux-gnu.tar.gz
-sudo mv stint /usr/local/bin/
+curl -fsSL https://daltonr121.github.io/stint/install.sh | sudo sh
+```
 
-# Linux (x86_64) — .deb package
+To inspect the script before running:
+
+```sh
+curl -fsSL https://daltonr121.github.io/stint/install.sh -o install.sh
+less install.sh
+sudo sh install.sh
+```
+
+### Other Methods
+
+```sh
+# Rust developers
+cargo install stint-cli
+
+# Debian/Ubuntu — manual .deb
 curl -LO https://github.com/DaltonR121/stint/releases/latest/download/stint-x86_64-unknown-linux-gnu.deb
 sudo dpkg -i stint-x86_64-unknown-linux-gnu.deb
 
 # macOS (Apple Silicon)
 curl -LO https://github.com/DaltonR121/stint/releases/latest/download/stint-aarch64-apple-darwin.tar.gz
-tar xzf stint-aarch64-apple-darwin.tar.gz
-sudo mv stint /usr/local/bin/
+tar xzf stint-aarch64-apple-darwin.tar.gz && sudo mv stint /usr/local/bin/
+
+# From source
+git clone https://github.com/DaltonR121/stint.git && cd stint
+cargo build --release && sudo cp target/release/stint /usr/local/bin/
 ```
 
-### From Source
+### VS Code Extension
 
-```sh
-git clone https://github.com/DaltonR121/stint.git
-cd stint
-cargo build --release
-sudo cp target/release/stint /usr/local/bin/
-```
-
-#### Requirements
-
-- Rust 1.75+ (2021 edition)
-- SQLite (bundled via `rusqlite`, no system dependency needed)
+Search **"Stint"** in the VS Code extension panel, or install from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=mosaic-ridge.stint-vscode). The extension auto-starts the API server and shows your current project + timer in the status bar.
 
 ## Quick Start
 
@@ -94,6 +77,9 @@ stint report --format csv > timesheet.csv
 
 # Interactive dashboard
 stint dashboard
+
+# Local API server (used by VS Code extension)
+stint serve
 ```
 
 ### Registering Projects Manually
@@ -125,6 +111,25 @@ stint import timesheet.csv
 ```
 
 The CSV must have `project` and `start` columns. Optional: `end`, `duration_secs`, `notes`.
+
+## Features
+
+- **Zero-config auto-tracking** — auto-discovers `.git` repos and tracks time via shell hooks, no manual setup needed
+- **Multi-project support** — track multiple projects simultaneously across different terminals
+- **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
+- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook (recommended)
+- **Multi-shell support** — bash, zsh, and fish
+- **Idle detection** — configurable auto-pause (default 5 minutes), resumes on next prompt
+- **Project management** — register projects with paths, tags, and hourly rates; archive, delete, ignore
+- **Rich reporting** — grouped by project or tag, with table/CSV/JSON/Markdown export and earnings calculation
+- **Quick summary** — `stint summary` for a one-line overview of today and this week
+- **Entry editing** — `stint edit` and `stint delete-entry` to fix the most recent entry
+- **CSV import** — `stint import <file.csv>` for one-time migration from Toggl, Clockify, or any tracker
+- **TUI dashboard** — `stint dashboard` with live timer, today's entries, and weekly project totals
+- **VS Code extension** — shows current project and live timer in the status bar
+- **Local API** — `stint serve` provides a JSON API on localhost for editor plugins and integrations
+- **Configurable** — `~/.config/stint/config.toml` for idle threshold, default rate, default tags, and auto-discovery toggle
+- **Local-first storage** — SQLite with WAL mode, no account, no cloud, no telemetry
 
 ## Configuration
 
@@ -159,13 +164,17 @@ Stint installs a shell hook that fires on every prompt render. The hook calls a 
 
 The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
 
-### Multi-Terminal Behavior
+### Multi-Terminal / Multi-Project
 
-- **Merge mode** (default): One timer per project, regardless of how many terminals are open. The timer only stops when the last terminal tracking that project closes or leaves the directory.
+Each terminal tracks independently. If you have one terminal in `/Projects/stint` and another in `/Projects/client-app`, both projects are tracked simultaneously with separate timers. Within a single project, merge mode keeps one timer regardless of how many terminals are open — the timer only stops when the last terminal leaves.
 
 ### Data Storage
 
-All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant). No account, no cloud, no telemetry. Your data stays on your machine unless you explicitly opt into cloud sync (future feature).
+All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant). No account, no cloud, no telemetry. Your data stays on your machine.
+
+### Local API
+
+`stint serve` starts a JSON API on `http://127.0.0.1:7653` with endpoints for status, entries, projects, start, and stop. The VS Code extension uses this automatically. See `stint serve --help` for options.
 
 ## Roadmap
 
@@ -176,9 +185,8 @@ All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant
 | 2 — Auto-Tracking | Shell hooks, idle detection, multi-terminal | Done |
 | 3 — TUI + v0.1.0 | Interactive dashboard, first public release | Done |
 | 4 — Zero-Config | Auto-discovery, config, import, entry editing | Done |
-| **4.5 — Invoicing** | Invoice generation from tracked time | **Up Next** |
-| 5 — Local API + Plugins | HTTP API, VS Code/Neovim extensions, apt repo | Planned |
-| 6 — Cloud + Web | Optional hosted sync, web dashboard, billing | Planned |
+| 5 — API + Distribution | Local API, VS Code extension, apt repo, crates.io | Done |
+| **6 — Cloud + Web** | Optional hosted sync, web dashboard | **Up Next** |
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
@@ -196,6 +204,9 @@ stint/
   crates/
     stint-core/             # Domain logic, storage, data models, services
     stint-cli/              # CLI commands, TUI dashboard, user interaction
+    stint-server/           # Local HTTP API server (axum)
+  editors/
+    vscode/                 # VS Code extension (TypeScript)
 ```
 
 ## Contributing
@@ -211,8 +222,6 @@ Found a vulnerability? Please report it responsibly. See [SECURITY.md](SECURITY.
 ## License
 
 Stint is licensed under the [MIT License](LICENSE).
-
-See [LICENSE](LICENSE) for the full text.
 
 ---
 

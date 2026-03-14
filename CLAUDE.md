@@ -8,9 +8,12 @@ Ryan Dalton / Mosaic Ridge LLC — sole developer and maintainer (BDFL).
 
 ## Tech Stack
 - **Language:** Rust (2021 edition)
-- **Build:** Cargo workspace (`crates/stint-core`, `crates/stint-cli`)
+- **Build:** Cargo workspace (`crates/stint-core`, `crates/stint-cli`, `crates/stint-server`)
 - **Storage:** SQLite via `rusqlite` (bundled)
 - **CLI:** `clap` for argument parsing
+- **TUI:** `ratatui` + `crossterm`
+- **API Server:** `axum` + `tokio`
+- **VS Code Extension:** TypeScript (`editors/vscode/`)
 - **Future web dashboard (Phase 6):** Next.js 16, React 19, TypeScript, Tailwind v4, Supabase, pnpm
 
 ## Build & Quality
@@ -34,13 +37,16 @@ MIT — free to use, modify, and distribute.
 - Storage uses a trait (`Storage`) for pluggability; only `SqliteStorage` implemented initially
 - Data is local-first — `~/.local/share/stint/stint.db` (XDG-compliant)
 - No telemetry, no analytics, no phone-home behavior
+- Multi-project tracking: each terminal tracks independently, merge mode within a single project
+
+## Distribution
+- **crates.io:** `cargo install stint-cli`
+- **GitHub Releases:** pre-built binaries + `.deb` for Linux, macOS, Windows
+- **Apt repository:** `curl | sh` install script at `daltonr121.github.io/stint/install.sh`
+- **VS Code Marketplace:** `mosaic-ridge.stint-vscode`
+- **Automated:** all publishing triggered by `git tag vX.Y.Z && git push origin vX.Y.Z`
 
 ## Current Phase
-Phase 4.5 — Invoicing (invoice generation from tracked time)
+Phase 6 — Cloud + Web Dashboard
 
-Phases 0 (Foundation), 1 (Core CLI), 2 (Auto-Tracking), 3 (TUI + v0.1.0), and 4 (Zero-Config & Daily Use) are complete.
-
-## Revised Roadmap
-- Phase 4.5: Invoicing
-- Phase 5: Local API + Editor Plugins + Apt Repository
-- Phase 6: Cloud + Web Dashboard
+Phases 0 (Foundation), 1 (Core CLI), 2 (Auto-Tracking), 3 (TUI + v0.1.0), 4 (Zero-Config & Daily Use), and 5 (API + Distribution) are complete.

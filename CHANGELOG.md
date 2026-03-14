@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 5 — API + Distribution
+- `stint serve` local HTTP API server (axum, localhost:7653)
+- API endpoints: `/api/health`, `/api/status`, `/api/entries`, `/api/projects`, `/api/start`, `/api/stop`
+- VS Code extension published to Marketplace (auto-starts server, live status bar timer)
+- Published to crates.io (`cargo install stint-cli`)
+- Apt repository on GitHub Pages with GPG-signed packages
+- Universal install script (`curl | sh` with auto-detection of OS and package manager)
+- Automated crates.io publishing in release workflow with idempotent version checks
+- License changed to MIT (previously FSL-1.1-MIT → BSL-1.1)
+
 #### Phase 4 — Zero-Config & Daily Use
 - `.git` auto-discovery: hook detects git repos and creates projects automatically
 - `stint project ignore <path>` / `stint project unignore <path>` to suppress auto-discovery
@@ -22,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema v3 migration: ignored paths table, project source column
 - RFC 4180-aware CSV parsing for quoted fields
 - Row validation before project creation in import (no orphaned projects)
-- License changed from FSL-1.1-MIT to BSL-1.1
 
 ## [0.1.0] — 2026-03-14
 

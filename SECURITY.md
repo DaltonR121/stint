@@ -37,8 +37,8 @@ Stint is a local-first CLI tool. The primary security concerns are:
 
 - **Local data integrity** — unauthorized access to the SQLite database
 - **Shell hook safety** — the hook executes on every prompt and writes to the database; it must not introduce injection vectors
+- **API server** — `stint serve` exposes a localhost-only HTTP API (no auth required, bound to 127.0.0.1)
 - **Dependency supply chain** — malicious or vulnerable Rust crates
-- **Future: API server** — `stint serve` will expose a local HTTP API (Phase 5)
 - **Future: Cloud sync** — authentication and data privacy (Phase 6)
 
 ## Design Principles
