@@ -79,4 +79,4 @@ For questions, ideas, and general conversation, use [GitHub Discussions](https:/
 
 ## License
 
-By contributing to Stint, you agree that your contributions will be licensed under the project's [FSL-1.1-MIT license](LICENSE).
+By contributing to Stint, you agree that your contributions will be licensed under the project's [BSL-1.1 license](LICENSE).

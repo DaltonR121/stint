@@ -5,5 +5,5 @@ members = ["crates/stint-core", "crates/stint-cli"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "FSL-1.1-MIT"
+license-file = "LICENSE"
 repository = "https://github.com/DaltonR121/stint"

@@ -33,6 +33,33 @@ impl ProjectStatus {
     }
 }
 
+/// How a project was created.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectSource {
+    /// Manually registered via `stint project add`.
+    Manual,
+    /// Auto-discovered from a `.git` directory.
+    Discovered,
+}
+
+impl ProjectSource {
+    /// Returns the source as a lowercase string for storage.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Discovered => "discovered",
+        }
+    }
+
+    /// Parses a source from a stored string value.
+    pub fn from_str_value(s: &str) -> Self {
+        match s {
+            "discovered" => Self::Discovered,
+            _ => Self::Manual,
+        }
+    }
+}
+
 /// A tracked project.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Project {
@@ -48,6 +75,8 @@ pub struct Project {
     pub hourly_rate_cents: Option<i64>,
     /// Whether this project is active or archived.
     pub status: ProjectStatus,
+    /// How this project was created.
+    pub source: ProjectSource,
     /// When this project was created.
     pub created_at: OffsetDateTime,
     /// When this project was last updated.

@@ -235,6 +235,34 @@ impl<S: Storage> StintService<S> {
         Ok(results)
     }
 
+    /// Returns the most recent time entry with its project.
+    pub fn get_last_entry(&self) -> Result<Option<(TimeEntry, Project)>, StintError> {
+        match self.storage.get_last_entry()? {
+            Some(entry) => {
+                let project = self
+                    .storage
+                    .get_project(&entry.project_id)?
+                    .ok_or_else(|| {
+                        StintError::InvalidInput("project not found for entry".to_string())
+                    })?;
+                Ok(Some((entry, project)))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Deletes a time entry by ID.
+    pub fn delete_entry(&self, id: &EntryId) -> Result<(), StintError> {
+        self.storage.delete_entry(id)?;
+        Ok(())
+    }
+
+    /// Updates a time entry.
+    pub fn update_entry(&self, entry: &TimeEntry) -> Result<(), StintError> {
+        self.storage.update_entry(entry)?;
+        Ok(())
+    }
+
     /// Resolves a project name to its ID for use in filters.
     pub fn resolve_project_id(&self, name: &str) -> Result<ProjectId, StintError> {
         let project = self
@@ -248,7 +276,7 @@ impl<S: Storage> StintService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::project::Project;
+    use crate::models::project::{Project, ProjectSource};
     use crate::storage::sqlite::SqliteStorage;
     use std::path::PathBuf;
 
@@ -266,6 +294,7 @@ mod tests {
             tags: vec![],
             hourly_rate_cents: None,
             status: ProjectStatus::Active,
+            source: ProjectSource::Manual,
             created_at: now,
             updated_at: now,
         };

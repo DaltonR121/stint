@@ -7,15 +7,14 @@ use std::path::Path;
 
 use time::OffsetDateTime;
 
+use crate::config::StintConfig;
+use crate::discover;
 use crate::error::StintError;
 use crate::models::entry::{EntrySource, TimeEntry};
-use crate::models::project::ProjectStatus;
+use crate::models::project::{Project, ProjectStatus};
 use crate::models::session::ShellSession;
 use crate::models::types::{EntryId, ProjectId, SessionId};
 use crate::storage::Storage;
-
-/// Default idle threshold in seconds (5 minutes).
-const IDLE_THRESHOLD_SECS: i64 = 300;
 
 /// Stale session threshold in seconds (1 hour).
 const STALE_THRESHOLD_SECS: i64 = 3600;
@@ -48,12 +47,13 @@ pub fn handle_hook(
     pid: u32,
     cwd: &Path,
     shell: Option<&str>,
+    config: &StintConfig,
 ) -> Result<HookAction, StintError> {
     let now = OffsetDateTime::now_utc();
 
     match storage.get_session_by_pid(pid)? {
-        None => handle_cold_start(storage, pid, cwd, shell, now),
-        Some(session) => handle_warm_path(storage, session, cwd, now),
+        None => handle_cold_start(storage, pid, cwd, shell, now, config),
+        Some(session) => handle_warm_path(storage, session, cwd, now, config),
     }
 }
 
@@ -64,13 +64,13 @@ fn handle_cold_start(
     cwd: &Path,
     shell: Option<&str>,
     now: OffsetDateTime,
+    config: &StintConfig,
 ) -> Result<HookAction, StintError> {
     // Reap stale sessions opportunistically
     let _ = reap_stale_sessions(storage, now);
 
-    // Detect project from cwd
-    let project = storage.get_project_by_path(cwd)?;
-    let active_project = project.filter(|p| p.status == ProjectStatus::Active);
+    // Detect project from cwd (registered paths first, then .git auto-discovery)
+    let active_project = detect_or_discover(storage, cwd, now, config)?;
 
     let project_id = active_project.as_ref().map(|p| p.id.clone());
 
@@ -104,9 +104,10 @@ fn handle_warm_path(
     mut session: ShellSession,
     cwd: &Path,
     now: OffsetDateTime,
+    config: &StintConfig,
 ) -> Result<HookAction, StintError> {
     let idle_gap = (now - session.last_heartbeat).whole_seconds();
-    let is_idle = idle_gap > IDLE_THRESHOLD_SECS;
+    let is_idle = idle_gap > config.idle_threshold_secs;
     let cwd_changed = session.cwd != cwd;
 
     // Fast path: no idle, no cwd change — just heartbeat
@@ -117,8 +118,7 @@ fn handle_warm_path(
     }
 
     // Need to detect project (cwd changed or idle gap)
-    let new_project = storage.get_project_by_path(cwd)?;
-    let new_active = new_project.filter(|p| p.status == ProjectStatus::Active);
+    let new_active = detect_or_discover(storage, cwd, now, config)?;
     let new_project_id = new_active.as_ref().map(|p| p.id.clone());
 
     let old_project_id = session.current_project_id.clone();
@@ -200,7 +200,11 @@ fn handle_warm_path(
 /// In merge mode, the entry is only stopped if no other active sessions
 /// share the same project. If the session was idle at exit, clamps the
 /// stop time to last_heartbeat to avoid counting idle time.
-pub fn handle_hook_exit(storage: &impl Storage, pid: u32) -> Result<(), StintError> {
+pub fn handle_hook_exit(
+    storage: &impl Storage,
+    pid: u32,
+    config: &StintConfig,
+) -> Result<(), StintError> {
     let session = match storage.get_session_by_pid(pid)? {
         Some(s) => s,
         None => return Ok(()), // No active session for this PID
@@ -210,7 +214,7 @@ pub fn handle_hook_exit(storage: &impl Storage, pid: u32) -> Result<(), StintErr
 
     // Clamp stop time to last_heartbeat if idle gap exceeds threshold
     let idle_gap = (now - session.last_heartbeat).whole_seconds();
-    let stop_time = if idle_gap > IDLE_THRESHOLD_SECS {
+    let stop_time = if idle_gap > config.idle_threshold_secs {
         session.last_heartbeat
     } else {
         now
@@ -311,6 +315,79 @@ fn try_create_hook_entry(
     Ok(())
 }
 
+/// Detects a project from registered paths, or auto-discovers from `.git`.
+///
+/// 1. Checks registered project paths via `get_project_by_path`
+/// 2. If not found, checks if the path is ignored
+/// 3. If not ignored, looks for a `.git` directory up the tree
+/// 4. If found, auto-creates a project with `source: discovered`
+fn detect_or_discover(
+    storage: &impl Storage,
+    cwd: &Path,
+    now: OffsetDateTime,
+    config: &StintConfig,
+) -> Result<Option<Project>, StintError> {
+    // First: check registered projects
+    let registered = storage.get_project_by_path(cwd)?;
+    if let Some(project) = registered {
+        if project.status == ProjectStatus::Active {
+            return Ok(Some(project));
+        }
+        return Ok(None);
+    }
+
+    // Second: check if auto-discovery is enabled
+    if !config.auto_discover {
+        return Ok(None);
+    }
+
+    // Third: check if this path is ignored
+    if storage.is_path_ignored(cwd)? {
+        return Ok(None);
+    }
+
+    // Fourth: try .git auto-discovery
+    let discovered = match discover::discover_project(cwd) {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+
+    // Check if the discovered root is ignored
+    if storage.is_path_ignored(&discovered.root)? {
+        return Ok(None);
+    }
+
+    // Try to create the project — if it already exists (race or archived), use the existing one
+    use crate::models::project::ProjectSource;
+    let project = Project {
+        id: ProjectId::new(),
+        name: discovered.name.clone(),
+        paths: vec![discovered.root],
+        tags: config.default_tags.clone(),
+        hourly_rate_cents: config.default_rate_cents,
+        status: ProjectStatus::Active,
+        source: ProjectSource::Discovered,
+        created_at: now,
+        updated_at: now,
+    };
+
+    match storage.create_project(&project) {
+        Ok(()) => Ok(Some(project)),
+        Err(crate::storage::error::StorageError::DuplicateProjectName(_)) => {
+            // Project already exists — use it only if active AND path matches
+            match storage.get_project_by_name(&discovered.name)? {
+                Some(p)
+                    if p.status == ProjectStatus::Active && p.paths.contains(&project.paths[0]) =>
+                {
+                    Ok(Some(p))
+                }
+                _ => Ok(None),
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// Creates a new hook-sourced time entry.
 fn new_hook_entry(
     project_id: &ProjectId,
@@ -335,9 +412,14 @@ fn new_hook_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::StintConfig;
     use crate::models::project::{Project, ProjectStatus};
     use crate::storage::sqlite::SqliteStorage;
     use crate::storage::Storage;
+
+    fn test_config() -> StintConfig {
+        StintConfig::default()
+    }
     use std::path::PathBuf;
 
     fn setup() -> SqliteStorage {
@@ -353,6 +435,7 @@ mod tests {
             tags: vec![],
             hourly_rate_cents: None,
             status: ProjectStatus::Active,
+            source: crate::models::project::ProjectSource::Manual,
             created_at: now,
             updated_at: now,
         };
@@ -364,7 +447,14 @@ mod tests {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
 
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/my-app/src"), None).unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app/src"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert!(matches!(action, HookAction::SessionStarted { .. }));
 
@@ -382,7 +472,14 @@ mod tests {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
 
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/other"), None).unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/other"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert_eq!(action, HookAction::SessionCreated);
 
@@ -396,8 +493,22 @@ mod tests {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
 
-        handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert_eq!(action, HookAction::Heartbeat);
     }
@@ -408,8 +519,22 @@ mod tests {
         create_project(&storage, "app-1", "/home/user/app-1");
         create_project(&storage, "app-2", "/home/user/app-2");
 
-        handle_hook(&storage, 1234, Path::new("/home/user/app-1"), None).unwrap();
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/app-2"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/app-1"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/app-2"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert!(
             matches!(action, HookAction::Switched { from, to } if from == "app-1" && to == "app-2")
@@ -429,8 +554,22 @@ mod tests {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
 
-        handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/other"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/other"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert!(matches!(action, HookAction::Stopped { .. }));
         assert!(storage.get_any_running_entry().unwrap().is_none());
@@ -441,8 +580,22 @@ mod tests {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
 
-        handle_hook(&storage, 1234, Path::new("/home/user/other"), None).unwrap();
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/other"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert!(matches!(action, HookAction::Started { .. }));
         assert!(storage.get_any_running_entry().unwrap().is_some());
@@ -472,7 +625,14 @@ mod tests {
         storage.create_entry(&manual_entry).unwrap();
 
         // Hook fires in the same project directory
-        handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         // Should still be only one running entry (the manual one)
         let filter = crate::models::entry::EntryFilter::default();
@@ -506,10 +666,17 @@ mod tests {
         storage.create_entry(&manual_entry).unwrap();
 
         // Hook creates a session in the same project
-        handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         // Shell exits
-        handle_hook_exit(&storage, 1234).unwrap();
+        handle_hook_exit(&storage, 1234, &test_config()).unwrap();
 
         // Manual entry should still be running
         let loaded = storage.get_entry(&manual_entry.id).unwrap().unwrap();
@@ -527,7 +694,14 @@ mod tests {
         project.updated_at = OffsetDateTime::now_utc();
         storage.update_project(&project).unwrap();
 
-        let action = handle_hook(&storage, 1234, Path::new("/home/user/old-app"), None).unwrap();
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/old-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         assert_eq!(action, HookAction::SessionCreated);
         assert!(storage.get_any_running_entry().unwrap().is_none());
@@ -538,10 +712,17 @@ mod tests {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
 
-        handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
+        handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
         assert!(storage.get_any_running_entry().unwrap().is_some());
 
-        handle_hook_exit(&storage, 1234).unwrap();
+        handle_hook_exit(&storage, 1234, &test_config()).unwrap();
 
         // Session should be ended
         assert!(storage.get_session_by_pid(1234).unwrap().is_none());
@@ -556,8 +737,22 @@ mod tests {
         create_project(&storage, "my-app", "/home/user/my-app");
 
         // Two shells in the same project
-        handle_hook(&storage, 1111, Path::new("/home/user/my-app"), None).unwrap();
-        handle_hook(&storage, 2222, Path::new("/home/user/my-app"), None).unwrap();
+        handle_hook(
+            &storage,
+            1111,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+        handle_hook(
+            &storage,
+            2222,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         // Only one running entry (merge mode)
         let filter = crate::models::entry::EntryFilter::default();
@@ -566,13 +761,13 @@ mod tests {
         assert_eq!(running.len(), 1);
 
         // First shell exits
-        handle_hook_exit(&storage, 1111).unwrap();
+        handle_hook_exit(&storage, 1111, &test_config()).unwrap();
 
         // Entry should still be running (shell 2222 still active)
         assert!(storage.get_any_running_entry().unwrap().is_some());
 
         // Second shell exits
-        handle_hook_exit(&storage, 2222).unwrap();
+        handle_hook_exit(&storage, 2222, &test_config()).unwrap();
 
         // Now the entry should be stopped
         assert!(storage.get_any_running_entry().unwrap().is_none());
@@ -585,11 +780,32 @@ mod tests {
         create_project(&storage, "app-2", "/home/user/app-2");
 
         // Two shells in the same project
-        handle_hook(&storage, 1111, Path::new("/home/user/app-1"), None).unwrap();
-        handle_hook(&storage, 2222, Path::new("/home/user/app-1"), None).unwrap();
+        handle_hook(
+            &storage,
+            1111,
+            Path::new("/home/user/app-1"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+        handle_hook(
+            &storage,
+            2222,
+            Path::new("/home/user/app-1"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         // Shell 1 switches to app-2 — app-1's entry should NOT stop
-        handle_hook(&storage, 1111, Path::new("/home/user/app-2"), None).unwrap();
+        handle_hook(
+            &storage,
+            1111,
+            Path::new("/home/user/app-2"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
 
         let app1 = storage.get_project_by_name("app-1").unwrap().unwrap();
         assert!(
@@ -602,7 +818,7 @@ mod tests {
     fn exit_with_no_session_is_noop() {
         let storage = setup();
         // Should not error
-        handle_hook_exit(&storage, 9999).unwrap();
+        handle_hook_exit(&storage, 9999, &test_config()).unwrap();
     }
 
     #[test]
@@ -641,5 +857,77 @@ mod tests {
         // Entry should be stopped at last_heartbeat time
         let stopped = storage.get_entry(&entry.id).unwrap().unwrap();
         assert!(!stopped.is_running());
+    }
+
+    #[test]
+    fn auto_discovers_git_repo() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        let action = handle_hook(&storage, 1234, &project_dir, None, &test_config()).unwrap();
+
+        assert!(matches!(action, HookAction::SessionStarted { .. }));
+
+        // Project should have been auto-created
+        let project = storage.get_project_by_name("my-project").unwrap().unwrap();
+        assert_eq!(project.paths[0], project_dir);
+
+        // Entry should be running
+        assert!(storage.get_any_running_entry().unwrap().is_some());
+    }
+
+    #[test]
+    fn auto_discovers_from_subdirectory() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+        let sub = project_dir.join("src").join("lib");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        handle_hook(&storage, 1234, &sub, None, &test_config()).unwrap();
+
+        // Should discover the project root, not the subdirectory
+        let project = storage.get_project_by_name("my-project").unwrap().unwrap();
+        assert_eq!(project.paths[0], project_dir);
+    }
+
+    #[test]
+    fn ignored_path_prevents_discovery() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        // Ignore this path
+        storage.add_ignored_path(&project_dir).unwrap();
+
+        let action = handle_hook(&storage, 1234, &project_dir, None, &test_config()).unwrap();
+
+        assert_eq!(action, HookAction::SessionCreated);
+        assert!(storage.get_project_by_name("dotfiles").unwrap().is_none());
+    }
+
+    #[test]
+    fn registered_project_takes_precedence_over_discovery() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        // Register with a custom name
+        create_project(&storage, "custom-name", &project_dir.to_string_lossy());
+
+        handle_hook(&storage, 1234, &project_dir, None, &test_config()).unwrap();
+
+        // Should use the registered name, not the directory name
+        assert!(storage
+            .get_project_by_name("custom-name")
+            .unwrap()
+            .is_some());
+        // Should NOT have created a "my-project" entry
+        assert!(storage.get_project_by_name("my-project").unwrap().is_none());
     }
 }

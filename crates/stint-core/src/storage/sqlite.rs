@@ -7,7 +7,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::models::entry::{EntryFilter, EntrySource, TimeEntry};
-use crate::models::project::{Project, ProjectStatus};
+use crate::models::project::{Project, ProjectSource, ProjectStatus};
 use crate::models::session::ShellSession;
 use crate::models::types::{EntryId, ProjectId, SessionId};
 
@@ -16,7 +16,7 @@ use super::Storage;
 
 /// Current schema version. Increment when adding migrations.
 #[cfg(test)]
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 /// SQLite-backed storage for Stint.
 pub struct SqliteStorage {
@@ -100,6 +100,9 @@ impl SqliteStorage {
         }
         if current_version < 2 {
             self.migrate_v2()?;
+        }
+        if current_version < 3 {
+            self.migrate_v3()?;
         }
 
         Ok(())
@@ -202,6 +205,34 @@ impl SqliteStorage {
         Ok(())
     }
 
+    /// Migration v3: ignored paths table and project source column for auto-discovery.
+    fn migrate_v3(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ignored_paths (
+                path TEXT PRIMARY KEY
+            );",
+        )?;
+
+        // Only add the source column if it doesn't already exist
+        let has_source: bool = self
+            .conn
+            .prepare("PRAGMA table_info('projects')")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .any(|col| col.as_deref() == Ok("source"));
+
+        if !has_source {
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';",
+            )?;
+        }
+
+        self.conn.execute_batch(
+            "INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '3');",
+        )?;
+
+        Ok(())
+    }
+
     // --- Helper methods ---
 
     /// Loads paths for a project from the project_paths table.
@@ -299,10 +330,12 @@ impl SqliteStorage {
         let name: String = row.get("name")?;
         let hourly_rate_cents: Option<i64> = row.get("hourly_rate_cents")?;
         let status_str: String = row.get("status")?;
+        let source_str: String = row.get("source").unwrap_or_else(|_| "manual".to_string());
         let created_at_str: String = row.get("created_at")?;
         let updated_at_str: String = row.get("updated_at")?;
 
         let status = ProjectStatus::from_str_value(&status_str).unwrap_or(ProjectStatus::Active);
+        let source = ProjectSource::from_str_value(&source_str);
         let created_at =
             OffsetDateTime::parse(&created_at_str, &Rfc3339).unwrap_or(OffsetDateTime::UNIX_EPOCH);
         let updated_at =
@@ -315,6 +348,7 @@ impl SqliteStorage {
             tags: vec![],  // loaded separately
             hourly_rate_cents,
             status,
+            source,
             created_at,
             updated_at,
         })
@@ -424,13 +458,14 @@ impl Storage for SqliteStorage {
         }
 
         tx.execute(
-            "INSERT INTO projects (id, name, hourly_rate_cents, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO projects (id, name, hourly_rate_cents, status, source, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 project.id.as_str(),
                 &project.name,
                 project.hourly_rate_cents,
                 project.status.as_str(),
+                project.source.as_str(),
                 Self::fmt_ts(&project.created_at),
                 Self::fmt_ts(&project.updated_at),
             ],
@@ -710,6 +745,22 @@ impl Storage for SqliteStorage {
         Ok(hydrated)
     }
 
+    fn get_last_entry(&self) -> Result<Option<TimeEntry>, StorageError> {
+        let entry = self
+            .conn
+            .query_row(
+                "SELECT * FROM entries ORDER BY start DESC LIMIT 1",
+                [],
+                |row| self.entry_from_row(row),
+            )
+            .optional()?;
+
+        match entry {
+            Some(e) => Ok(Some(self.hydrate_entry(e)?)),
+            None => Ok(None),
+        }
+    }
+
     fn update_entry(&self, entry: &TimeEntry) -> Result<(), StorageError> {
         let tx = self.conn.unchecked_transaction()?;
         let end_str = entry.end.as_ref().map(Self::fmt_ts);
@@ -863,6 +914,53 @@ impl Storage for SqliteStorage {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(sessions)
     }
+
+    // --- Ignored Paths ---
+
+    fn add_ignored_path(&self, path: &Path) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO ignored_paths (path) VALUES (?1)",
+            params![path.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
+    fn remove_ignored_path(&self, path: &Path) -> Result<bool, StorageError> {
+        let changed = self.conn.execute(
+            "DELETE FROM ignored_paths WHERE path = ?1",
+            params![path.to_string_lossy()],
+        )?;
+        Ok(changed > 0)
+    }
+
+    fn is_path_ignored(&self, path: &Path) -> Result<bool, StorageError> {
+        let path_str = path.to_string_lossy();
+        // Check if the path itself or any of its ancestors is ignored
+        let ignored: bool = self.conn.query_row(
+            "SELECT EXISTS(
+                    SELECT 1 FROM ignored_paths
+                    WHERE ?1 = path
+                       OR (LENGTH(?1) > LENGTH(path)
+                           AND SUBSTR(?1, 1, LENGTH(path) + 1) = path || '/')
+                )",
+            params![path_str],
+            |row| row.get(0),
+        )?;
+        Ok(ignored)
+    }
+
+    fn list_ignored_paths(&self) -> Result<Vec<PathBuf>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM ignored_paths ORDER BY path")?;
+        let paths = stmt
+            .query_map([], |row| {
+                let p: String = row.get(0)?;
+                Ok(PathBuf::from(p))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(paths)
+    }
 }
 
 #[cfg(test)]
@@ -880,6 +978,7 @@ mod tests {
             tags: vec![],
             hourly_rate_cents: None,
             status: ProjectStatus::Active,
+            source: ProjectSource::Manual,
             created_at: now,
             updated_at: now,
         }

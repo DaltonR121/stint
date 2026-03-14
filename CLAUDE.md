@@ -23,7 +23,7 @@ cargo fmt --check
 All four must pass before committing.
 
 ## License
-FSL-1.1-MIT — free to self-host, commercial hosting reserved, converts to MIT after 2 years.
+BSL-1.1 — free to use and self-host, commercial hosting rights reserved to Mosaic Ridge LLC.
 
 ## Commit Messages
 - Keep short and focused on what changed and why
