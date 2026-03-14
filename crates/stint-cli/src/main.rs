@@ -1,4 +1,195 @@
-/// Entry point for the Stint CLI.
+//! Entry point for the Stint CLI.
+
+use std::path::PathBuf;
+use std::process;
+
+use clap::{Parser, Subcommand};
+use stint_core::models::project::{Project, ProjectStatus};
+use stint_core::models::types::ProjectId;
+use stint_core::storage::sqlite::SqliteStorage;
+use stint_core::storage::Storage;
+use time::OffsetDateTime;
+
+/// Terminal-native project time tracker.
+#[derive(Parser)]
+#[command(name = "stint", version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+/// Top-level commands.
+#[derive(Subcommand)]
+enum Commands {
+    /// Manage projects.
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
+}
+
+/// Project subcommands.
+#[derive(Subcommand)]
+enum ProjectCommands {
+    /// Register a new project.
+    Add {
+        /// Project name (must be unique).
+        name: String,
+
+        /// Directory path for this project.
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Comma-separated tags.
+        #[arg(short, long)]
+        tags: Option<String>,
+
+        /// Hourly rate in dollars (e.g., 150.00).
+        #[arg(long)]
+        rate: Option<f64>,
+    },
+
+    /// List registered projects.
+    List {
+        /// Show all projects including archived.
+        #[arg(short, long)]
+        all: bool,
+    },
+}
+
+/// Opens the database, exiting on failure.
+fn open_storage() -> SqliteStorage {
+    let path = SqliteStorage::default_path();
+    match SqliteStorage::open(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to open database at {}: {e}", path.display());
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `project add` command.
+fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<f64>) {
+    let storage = open_storage();
+
+    let paths = match path {
+        Some(p) => {
+            let resolved = match p.canonicalize() {
+                Ok(abs) => abs,
+                Err(e) => {
+                    eprintln!("error: invalid path '{}': {e}", p.display());
+                    process::exit(1);
+                }
+            };
+            vec![resolved]
+        }
+        None => vec![],
+    };
+
+    let parsed_tags = tags
+        .map(|t| stint_core::models::tag::parse_tags(&t))
+        .unwrap_or_default();
+
+    let hourly_rate_cents = rate.map(|r| (r * 100.0) as i64);
+
+    let now = OffsetDateTime::now_utc();
+    let project = Project {
+        id: ProjectId::new(),
+        name: name.clone(),
+        paths,
+        tags: parsed_tags,
+        hourly_rate_cents,
+        status: ProjectStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+
+    match storage.create_project(&project) {
+        Ok(()) => println!("Created project '{name}'"),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `project list` command.
+fn project_list(all: bool) {
+    let storage = open_storage();
+
+    let status_filter = if all {
+        None
+    } else {
+        Some(ProjectStatus::Active)
+    };
+
+    let projects = match storage.list_projects(status_filter) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    if projects.is_empty() {
+        println!("No projects registered. Use 'stint project add' to create one.");
+        return;
+    }
+
+    for project in &projects {
+        let paths_str = project
+            .paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let rate_str = match project.hourly_rate_cents {
+            Some(cents) => format!("${:.2}/hr", cents as f64 / 100.0),
+            None => String::new(),
+        };
+
+        let tags_str = if project.tags.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", project.tags.join(", "))
+        };
+
+        let status_str = if project.status == ProjectStatus::Archived {
+            " (archived)"
+        } else {
+            ""
+        };
+
+        let mut parts = vec![project.name.clone()];
+        if !paths_str.is_empty() {
+            parts.push(paths_str);
+        }
+        if !rate_str.is_empty() {
+            parts.push(rate_str);
+        }
+        if !tags_str.is_empty() {
+            parts.push(tags_str);
+        }
+
+        println!("  {}{status_str}", parts.join("  "));
+    }
+}
+
+/// Entry point.
 fn main() {
-    println!("stint v{}", env!("CARGO_PKG_VERSION"));
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Project { command } => match command {
+            ProjectCommands::Add {
+                name,
+                path,
+                tags,
+                rate,
+            } => project_add(name, path, tags, rate),
+            ProjectCommands::List { all } => project_list(all),
+        },
+    }
 }
