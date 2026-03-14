@@ -90,7 +90,11 @@ impl StintConfig {
         }
 
         if let Some(v) = values.get("default_tags") {
-            config.default_tags = v.split(',').map(|t| t.trim().to_string()).collect();
+            config.default_tags = v
+                .split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect();
         }
 
         config

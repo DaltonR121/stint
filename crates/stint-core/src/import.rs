@@ -104,13 +104,8 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
         {
             Some(dt) => dt,
             None => {
-                // No start column or unparseable — use today if duration-only import
-                if duration_col.is_some() {
-                    now.date().midnight().assume_utc()
-                } else {
-                    result.rows_skipped += 1;
-                    continue;
-                }
+                result.rows_skipped += 1;
+                continue;
             }
         };
 
@@ -127,6 +122,12 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
 
         // Ensure end is set (imported entries should always be completed)
         let end = end.or_else(|| duration_secs.map(|d| start + time::Duration::seconds(d)));
+
+        // Skip rows that can't produce a completed entry
+        if end.is_none() {
+            result.rows_skipped += 1;
+            continue;
+        }
 
         // Parse notes
         let notes = notes_col
@@ -242,7 +243,7 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(
             file,
-            "project,duration_secs\napp-1,3600\napp-2,1800\napp-1,900"
+            "project,start,end,duration_secs\napp-1,2026-01-01 09:00:00,2026-01-01 10:00:00,3600\napp-2,2026-01-01 11:00:00,2026-01-01 11:30:00,1800\napp-1,2026-01-01 14:00:00,2026-01-01 14:15:00,900"
         )
         .unwrap();
 
@@ -255,7 +256,7 @@ mod tests {
     fn import_skips_empty_project() {
         let storage = setup();
         let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "project,duration_secs\n,3600\nmy-app,1800").unwrap();
+        writeln!(file, "project,start,duration_secs\n,2026-01-01 09:00:00,3600\nmy-app,2026-01-01 10:00:00,1800").unwrap();
 
         let result = import_csv(&storage, file.path()).unwrap();
         assert_eq!(result.entries_imported, 1);

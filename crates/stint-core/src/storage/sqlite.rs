@@ -210,11 +210,24 @@ impl SqliteStorage {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS ignored_paths (
                 path TEXT PRIMARY KEY
-            );
+            );",
+        )?;
 
-            ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+        // Only add the source column if it doesn't already exist
+        let has_source: bool = self
+            .conn
+            .prepare("PRAGMA table_info('projects')")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .any(|col| col.as_deref() == Ok("source"));
 
-            INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '3');",
+        if !has_source {
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';",
+            )?;
+        }
+
+        self.conn.execute_batch(
+            "INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '3');",
         )?;
 
         Ok(())

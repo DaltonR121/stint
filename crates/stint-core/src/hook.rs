@@ -342,7 +342,7 @@ fn detect_or_discover(
     }
 
     // Third: check if this path is ignored
-    if storage.is_path_ignored(cwd).unwrap_or(false) {
+    if storage.is_path_ignored(cwd)? {
         return Ok(None);
     }
 
@@ -353,7 +353,7 @@ fn detect_or_discover(
     };
 
     // Check if the discovered root is ignored
-    if storage.is_path_ignored(&discovered.root).unwrap_or(false) {
+    if storage.is_path_ignored(&discovered.root)? {
         return Ok(None);
     }
 
@@ -374,9 +374,13 @@ fn detect_or_discover(
     match storage.create_project(&project) {
         Ok(()) => Ok(Some(project)),
         Err(crate::storage::error::StorageError::DuplicateProjectName(_)) => {
-            // Project already exists — use it if active
+            // Project already exists — use it only if active AND path matches
             match storage.get_project_by_name(&discovered.name)? {
-                Some(p) if p.status == ProjectStatus::Active => Ok(Some(p)),
+                Some(p)
+                    if p.status == ProjectStatus::Active && p.paths.contains(&project.paths[0]) =>
+                {
+                    Ok(Some(p))
+                }
                 _ => Ok(None),
             }
         }

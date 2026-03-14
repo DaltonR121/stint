@@ -926,12 +926,18 @@ fn cmd_hook(cwd: PathBuf, pid: u32, shell: Option<String>, exit: bool) {
         Ok(s) => s,
         Err(_) => return, // Silently bail — DB doesn't exist yet or can't open
     };
-    let config_path = stint_core::config::StintConfig::default_path();
-    let config = if config_path.exists() {
-        stint_core::config::StintConfig::load_from(&config_path).unwrap_or_default()
-    } else {
-        stint_core::config::StintConfig::default()
-    };
+    // Use default config in the hook hot path to avoid any filesystem I/O.
+    // Users who need custom config can set STINT_IDLE_THRESHOLD env var as a
+    // lightweight override without file reads.
+    let mut config = stint_core::config::StintConfig::default();
+    if let Ok(val) = std::env::var("STINT_IDLE_THRESHOLD") {
+        if let Ok(secs) = val.parse::<i64>() {
+            config.idle_threshold_secs = secs;
+        }
+    }
+    if std::env::var("STINT_NO_DISCOVER").is_ok() {
+        config.auto_discover = false;
+    }
     if exit {
         let _ = hook::handle_hook_exit(&storage, pid, &config);
     } else {
