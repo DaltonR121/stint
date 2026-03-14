@@ -37,6 +37,22 @@ impl SqliteStorage {
         Ok(storage)
     }
 
+    /// Opens an existing database without creating directories or running migrations.
+    ///
+    /// Returns `Err` if the database file does not exist or cannot be opened.
+    /// Intended for the shell hook fast path where the DB should already exist.
+    pub fn open_existing(path: &Path) -> Result<Self, StorageError> {
+        if !path.exists() {
+            return Err(StorageError::Migration(
+                "database does not exist".to_string(),
+            ));
+        }
+        let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        Ok(Self { conn })
+    }
+
     /// Opens an in-memory database for testing.
     pub fn open_in_memory() -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
@@ -168,7 +184,7 @@ impl SqliteStorage {
         Ok(())
     }
 
-    /// Migration v2: indexes for session queries used by shell hooks.
+    /// Migration v2: indexes for session and hook queries.
     fn migrate_v2(&self) -> Result<(), StorageError> {
         self.conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_sessions_active_project
@@ -176,6 +192,9 @@ impl SqliteStorage {
 
             CREATE INDEX IF NOT EXISTS idx_sessions_active_heartbeat
                 ON sessions(last_heartbeat) WHERE ended_at IS NULL;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_one_running_per_project
+                ON entries(project_id) WHERE end_time IS NULL;
 
             INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '2');",
         )?;
@@ -869,13 +888,14 @@ mod tests {
     /// Creates a test entry with sensible defaults.
     fn test_entry(project_id: &ProjectId, start: OffsetDateTime) -> TimeEntry {
         let now = OffsetDateTime::now_utc();
+        let end = start + time::Duration::hours(1);
         TimeEntry {
             id: EntryId::new(),
             project_id: project_id.clone(),
             session_id: None,
             start,
-            end: None,
-            duration_secs: None,
+            end: Some(end),
+            duration_secs: Some(3600),
             source: EntrySource::Manual,
             notes: None,
             tags: vec![],
@@ -1134,7 +1154,6 @@ mod tests {
         assert_eq!(loaded.project_id, project.id);
         assert_eq!(loaded.tags, vec!["bugfix"]);
         assert_eq!(loaded.notes.as_deref(), Some("Fixed the login bug"));
-        assert!(loaded.is_running());
     }
 
     #[test]
@@ -1143,7 +1162,9 @@ mod tests {
         let project = test_project("my-app", vec![]);
         storage.create_project(&project).unwrap();
 
-        let entry = test_entry(&project.id, datetime!(2026-01-01 9:00 UTC));
+        let mut entry = test_entry(&project.id, datetime!(2026-01-01 9:00 UTC));
+        entry.end = None;
+        entry.duration_secs = None;
         storage.create_entry(&entry).unwrap();
 
         let running = storage.get_running_entry(&project.id).unwrap().unwrap();
@@ -1173,7 +1194,9 @@ mod tests {
         storage.create_project(&p1).unwrap();
         storage.create_project(&p2).unwrap();
 
-        let entry = test_entry(&p2.id, datetime!(2026-01-01 9:00 UTC));
+        let mut entry = test_entry(&p2.id, datetime!(2026-01-01 9:00 UTC));
+        entry.end = None;
+        entry.duration_secs = None;
         storage.create_entry(&entry).unwrap();
 
         let running = storage.get_any_running_entry().unwrap().unwrap();

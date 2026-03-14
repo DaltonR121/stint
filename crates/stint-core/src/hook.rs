@@ -11,7 +11,7 @@ use crate::error::StintError;
 use crate::models::entry::{EntrySource, TimeEntry};
 use crate::models::project::ProjectStatus;
 use crate::models::session::ShellSession;
-use crate::models::types::{EntryId, SessionId};
+use crate::models::types::{EntryId, ProjectId, SessionId};
 use crate::storage::Storage;
 
 /// Default idle threshold in seconds (5 minutes).
@@ -89,10 +89,7 @@ fn handle_cold_start(
     match active_project {
         Some(project) => {
             // Merge mode: only create entry if none is running for this project
-            if storage.get_running_entry(&project.id)?.is_none() {
-                let entry = new_hook_entry(&project.id, &session.id, now);
-                storage.create_entry(&entry)?;
-            }
+            try_create_hook_entry(storage, &project.id, &session.id, now)?;
             Ok(HookAction::SessionStarted {
                 project_name: project.name,
             })
@@ -110,8 +107,16 @@ fn handle_warm_path(
 ) -> Result<HookAction, StintError> {
     let idle_gap = (now - session.last_heartbeat).whole_seconds();
     let is_idle = idle_gap > IDLE_THRESHOLD_SECS;
+    let cwd_changed = session.cwd != cwd;
 
-    // Detect current project from cwd
+    // Fast path: no idle, no cwd change — just heartbeat
+    if !is_idle && !cwd_changed {
+        session.last_heartbeat = now;
+        storage.upsert_session(&session)?;
+        return Ok(HookAction::Heartbeat);
+    }
+
+    // Need to detect project (cwd changed or idle gap)
     let new_project = storage.get_project_by_path(cwd)?;
     let new_active = new_project.filter(|p| p.status == ProjectStatus::Active);
     let new_project_id = new_active.as_ref().map(|p| p.id.clone());
@@ -122,7 +127,11 @@ fn handle_warm_path(
     // Handle idle gap: stop old entry at last_heartbeat time
     if is_idle {
         if let Some(ref old_pid) = old_project_id {
-            stop_entry_for_project(storage, old_pid, session.last_heartbeat)?;
+            // Only stop if no other active sessions share this project
+            let others = storage.count_active_sessions_for_project(old_pid, &session.id)?;
+            if others == 0 {
+                stop_hook_entry_for_project(storage, old_pid, session.last_heartbeat)?;
+            }
         }
 
         // Update session
@@ -133,10 +142,7 @@ fn handle_warm_path(
 
         // Start new entry if we're in a project
         if let Some(project) = new_active {
-            if storage.get_running_entry(&project.id)?.is_none() {
-                let entry = new_hook_entry(&project.id, &session.id, now);
-                storage.create_entry(&entry)?;
-            }
+            try_create_hook_entry(storage, &project.id, &session.id, now)?;
             return Ok(HookAction::IdleResume {
                 project_name: project.name,
             });
@@ -144,7 +150,7 @@ fn handle_warm_path(
         return Ok(HookAction::Heartbeat);
     }
 
-    // No idle gap, no project change — just heartbeat
+    // cwd changed but no idle — check if project changed
     if !project_changed {
         session.cwd = cwd.to_path_buf();
         session.last_heartbeat = now;
@@ -155,7 +161,11 @@ fn handle_warm_path(
     // Project changed — stop old, start new
     let old_name = if let Some(ref old_pid) = old_project_id {
         let old_project = storage.get_project(old_pid)?;
-        stop_entry_for_project(storage, old_pid, now)?;
+        // Only stop if no other active sessions share this project
+        let others = storage.count_active_sessions_for_project(old_pid, &session.id)?;
+        if others == 0 {
+            stop_hook_entry_for_project(storage, old_pid, now)?;
+        }
         old_project.map(|p| p.name)
     } else {
         None
@@ -168,10 +178,7 @@ fn handle_warm_path(
 
     match (old_name, new_active) {
         (Some(from), Some(to_project)) => {
-            if storage.get_running_entry(&to_project.id)?.is_none() {
-                let entry = new_hook_entry(&to_project.id, &session.id, now);
-                storage.create_entry(&entry)?;
-            }
+            try_create_hook_entry(storage, &to_project.id, &session.id, now)?;
             Ok(HookAction::Switched {
                 from,
                 to: to_project.name,
@@ -179,10 +186,7 @@ fn handle_warm_path(
         }
         (Some(from), None) => Ok(HookAction::Stopped { project_name: from }),
         (None, Some(to_project)) => {
-            if storage.get_running_entry(&to_project.id)?.is_none() {
-                let entry = new_hook_entry(&to_project.id, &session.id, now);
-                storage.create_entry(&entry)?;
-            }
+            try_create_hook_entry(storage, &to_project.id, &session.id, now)?;
             Ok(HookAction::Started {
                 project_name: to_project.name,
             })
@@ -194,7 +198,8 @@ fn handle_warm_path(
 /// Handles shell exit: ends the session and conditionally stops the timer.
 ///
 /// In merge mode, the entry is only stopped if no other active sessions
-/// share the same project.
+/// share the same project. If the session was idle at exit, clamps the
+/// stop time to last_heartbeat to avoid counting idle time.
 pub fn handle_hook_exit(storage: &impl Storage, pid: u32) -> Result<(), StintError> {
     let session = match storage.get_session_by_pid(pid)? {
         Some(s) => s,
@@ -203,14 +208,22 @@ pub fn handle_hook_exit(storage: &impl Storage, pid: u32) -> Result<(), StintErr
 
     let now = OffsetDateTime::now_utc();
 
+    // Clamp stop time to last_heartbeat if idle gap exceeds threshold
+    let idle_gap = (now - session.last_heartbeat).whole_seconds();
+    let stop_time = if idle_gap > IDLE_THRESHOLD_SECS {
+        session.last_heartbeat
+    } else {
+        now
+    };
+
     // End the session
-    storage.end_session(&session.id, now)?;
+    storage.end_session(&session.id, stop_time)?;
 
     // In merge mode, only stop the entry if no other sessions share this project
     if let Some(ref project_id) = session.current_project_id {
         let other_sessions = storage.count_active_sessions_for_project(project_id, &session.id)?;
         if other_sessions == 0 {
-            stop_entry_for_project(storage, project_id, now)?;
+            stop_hook_entry_for_project(storage, project_id, stop_time)?;
         }
     }
 
@@ -235,10 +248,8 @@ pub fn reap_stale_sessions(
     }
 
     // Group by project_id, tracking the max last_heartbeat per project
-    let mut project_max_heartbeat: std::collections::HashMap<
-        String,
-        (crate::models::types::ProjectId, OffsetDateTime),
-    > = std::collections::HashMap::new();
+    let mut project_max_heartbeat: std::collections::HashMap<String, (ProjectId, OffsetDateTime)> =
+        std::collections::HashMap::new();
 
     // End all stale sessions first
     for session in &stale {
@@ -258,11 +269,10 @@ pub fn reap_stale_sessions(
 
     // Stop entries only for projects with no remaining active sessions
     for (project_id, max_heartbeat) in project_max_heartbeat.values() {
-        // Use a dummy session ID that won't match anything to count all active sessions
         let dummy_id = SessionId::new();
         let active_count = storage.count_active_sessions_for_project(project_id, &dummy_id)?;
         if active_count == 0 {
-            stop_entry_for_project(storage, project_id, *max_heartbeat)?;
+            stop_hook_entry_for_project(storage, project_id, *max_heartbeat)?;
         }
     }
 
@@ -273,9 +283,9 @@ pub fn reap_stale_sessions(
 ///
 /// Only stops entries with `source: Hook`. Manual entries are left untouched
 /// so that `stint start`/`stint stop` are not interfered with by the hook.
-fn stop_entry_for_project(
+fn stop_hook_entry_for_project(
     storage: &impl Storage,
-    project_id: &crate::models::types::ProjectId,
+    project_id: &ProjectId,
     end_time: OffsetDateTime,
 ) -> Result<(), StintError> {
     if let Some(mut entry) = storage.get_running_hook_entry(project_id)? {
@@ -287,9 +297,23 @@ fn stop_entry_for_project(
     Ok(())
 }
 
+/// Tries to create a hook entry, skipping if one is already running (merge mode).
+fn try_create_hook_entry(
+    storage: &impl Storage,
+    project_id: &ProjectId,
+    session_id: &SessionId,
+    now: OffsetDateTime,
+) -> Result<(), StintError> {
+    if storage.get_running_entry(project_id)?.is_none() {
+        let entry = new_hook_entry(project_id, session_id, now);
+        storage.create_entry(&entry)?;
+    }
+    Ok(())
+}
+
 /// Creates a new hook-sourced time entry.
 fn new_hook_entry(
-    project_id: &crate::models::types::ProjectId,
+    project_id: &ProjectId,
     session_id: &SessionId,
     now: OffsetDateTime,
 ) -> TimeEntry {
@@ -312,7 +336,6 @@ fn new_hook_entry(
 mod tests {
     use super::*;
     use crate::models::project::{Project, ProjectStatus};
-    use crate::models::types::ProjectId;
     use crate::storage::sqlite::SqliteStorage;
     use crate::storage::Storage;
     use std::path::PathBuf;
@@ -460,6 +483,40 @@ mod tests {
     }
 
     #[test]
+    fn hook_does_not_stop_manual_entry_on_exit() {
+        let storage = setup();
+        create_project(&storage, "my-app", "/home/user/my-app");
+
+        // Manually start a timer
+        let project = storage.get_project_by_name("my-app").unwrap().unwrap();
+        let now = OffsetDateTime::now_utc();
+        let manual_entry = TimeEntry {
+            id: EntryId::new(),
+            project_id: project.id.clone(),
+            session_id: None,
+            start: now,
+            end: None,
+            duration_secs: None,
+            source: EntrySource::Manual,
+            notes: None,
+            tags: vec![],
+            created_at: now,
+            updated_at: now,
+        };
+        storage.create_entry(&manual_entry).unwrap();
+
+        // Hook creates a session in the same project
+        handle_hook(&storage, 1234, Path::new("/home/user/my-app"), None).unwrap();
+
+        // Shell exits
+        handle_hook_exit(&storage, 1234).unwrap();
+
+        // Manual entry should still be running
+        let loaded = storage.get_entry(&manual_entry.id).unwrap().unwrap();
+        assert!(loaded.is_running());
+    }
+
+    #[test]
     fn archived_project_is_not_tracked() {
         let storage = setup();
         create_project(&storage, "old-app", "/home/user/old-app");
@@ -519,6 +576,26 @@ mod tests {
 
         // Now the entry should be stopped
         assert!(storage.get_any_running_entry().unwrap().is_none());
+    }
+
+    #[test]
+    fn switch_in_merge_mode_keeps_entry_if_other_sessions() {
+        let storage = setup();
+        create_project(&storage, "app-1", "/home/user/app-1");
+        create_project(&storage, "app-2", "/home/user/app-2");
+
+        // Two shells in the same project
+        handle_hook(&storage, 1111, Path::new("/home/user/app-1"), None).unwrap();
+        handle_hook(&storage, 2222, Path::new("/home/user/app-1"), None).unwrap();
+
+        // Shell 1 switches to app-2 — app-1's entry should NOT stop
+        handle_hook(&storage, 1111, Path::new("/home/user/app-2"), None).unwrap();
+
+        let app1 = storage.get_project_by_name("app-1").unwrap().unwrap();
+        assert!(
+            storage.get_running_entry(&app1.id).unwrap().is_some(),
+            "app-1 entry should still be running because shell 2222 is still there"
+        );
     }
 
     #[test]
