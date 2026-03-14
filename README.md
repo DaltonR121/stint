@@ -20,14 +20,14 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 ### Available Now
 - **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers transparently
 - **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
-- **Multi-shell support** — bash, zsh, and fish hook scripts via `stint shell <type>`
+- **Multi-shell support** — bash, zsh, and fish via `stint shell <type>` (advanced/manual hook installation)
 - **Multi-terminal handling** — merge mode keeps one timer per project across terminals
 - **Idle detection** — auto-pause after 5 minutes of inactivity, resumes on next prompt
 - **Project management** — register projects with paths, tags, and hourly rates; archive and delete
 - **Rich reporting** — grouped by project or tag, with CSV/JSON/Markdown export
 - **Retroactive entries** — `stint add 2h30m --date yesterday --notes "..."` with human-friendly duration and date parsing
 - **TUI dashboard** — `stint dashboard` with live timer, today's entries, and weekly project totals
-- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically
+- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically (recommended)
 - **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
