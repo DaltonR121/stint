@@ -109,6 +109,12 @@ impl<S: Storage> StintService<S> {
         date: Option<OffsetDateTime>,
         notes: Option<&str>,
     ) -> Result<(TimeEntry, Project), StintError> {
+        if duration_secs <= 0 {
+            return Err(StintError::InvalidInput(
+                "duration must be greater than zero".to_string(),
+            ));
+        }
+
         let project = self.resolve_active_project(project_name)?;
 
         let start = date.unwrap_or_else(|| {
@@ -312,6 +318,24 @@ mod tests {
     fn start_nonexistent_project_errors() {
         let service = setup();
         let result = service.start_timer("no-such-project");
+        assert!(matches!(result, Err(StintError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn add_time_zero_duration_errors() {
+        let service = setup();
+        create_project(&service, "my-app");
+
+        let result = service.add_time("my-app", 0, None, None);
+        assert!(matches!(result, Err(StintError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn add_time_negative_duration_errors() {
+        let service = setup();
+        create_project(&service, "my-app");
+
+        let result = service.add_time("my-app", -3600, None, None);
         assert!(matches!(result, Err(StintError::InvalidInput(_))));
     }
 

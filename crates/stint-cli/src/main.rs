@@ -432,8 +432,8 @@ fn cmd_report(
         return;
     }
 
-    let rows = generate_report(&entries, &group);
-    print!("{}", format_report(&rows, &fmt));
+    let result = generate_report(&entries, &group);
+    print!("{}", format_report(&result, &fmt));
 }
 
 /// Handles the `project add` command.

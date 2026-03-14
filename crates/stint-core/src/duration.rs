@@ -30,16 +30,19 @@ pub fn parse_duration(input: &str) -> Result<i64, String> {
                 .parse()
                 .map_err(|_| format!("invalid number in '{input}'"))?;
 
-            match unit {
-                'h' => total_secs += value * 3600,
-                'm' => total_secs += value * 60,
-                's' => total_secs += value,
+            let secs = match unit {
+                'h' => value.checked_mul(3600),
+                'm' => value.checked_mul(60),
+                's' => Some(value),
                 _ => {
                     return Err(format!(
                         "unknown unit '{unit}' in '{input}' (use h, m, or s)"
                     ))
                 }
-            }
+            };
+            total_secs = secs
+                .and_then(|s| total_secs.checked_add(s))
+                .ok_or_else(|| format!("duration too large: '{input}'"))?;
 
             current_num.clear();
             found_unit = true;
