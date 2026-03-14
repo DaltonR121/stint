@@ -213,50 +213,76 @@ fn format_table(result: &ReportResult) -> String {
         return "No entries found.\n".to_string();
     }
 
-    // Compute column widths
-    let group_width = result
+    // Pre-format all values so we can measure widths
+    let formatted: Vec<(String, String, String, String)> = result
         .rows
         .iter()
-        .map(|r| r.group.len())
+        .map(|row| {
+            let earnings = match row.earnings_cents {
+                Some(c) => format!("${}.{:02}", c / 100, c % 100),
+                None => "\u{2014}".to_string(),
+            };
+            (
+                row.group.clone(),
+                format_duration_human(row.total_secs),
+                row.entry_count.to_string(),
+                earnings,
+            )
+        })
+        .collect();
+
+    let total_time = format_duration_human(result.unique_total_secs);
+    let total_entries = result.unique_entry_count.to_string();
+
+    // Compute dynamic column widths from headers, rows, and footer
+    let gw = formatted
+        .iter()
+        .map(|(g, _, _, _)| g.len())
+        .chain(std::iter::once("GROUP".len()))
+        .chain(std::iter::once("Total".len()))
         .max()
-        .unwrap_or(5)
-        .max(5); // minimum "Group" header width
+        .unwrap_or(5);
+    let tw = formatted
+        .iter()
+        .map(|(_, t, _, _)| t.len())
+        .chain(std::iter::once("TIME".len()))
+        .chain(std::iter::once(total_time.len()))
+        .max()
+        .unwrap_or(4);
+    let ew = formatted
+        .iter()
+        .map(|(_, _, e, _)| e.len())
+        .chain(std::iter::once("ENTRIES".len()))
+        .chain(std::iter::once(total_entries.len()))
+        .max()
+        .unwrap_or(7);
+    let rw = formatted
+        .iter()
+        .map(|(_, _, _, r)| r.len())
+        .chain(std::iter::once("EARNINGS".len()))
+        .max()
+        .unwrap_or(8);
 
     let mut out = String::new();
 
     // Header
     out.push_str(&format!(
-        "  {:<gw$}  {:>10}  {:>7}  {:>10}\n",
-        "GROUP",
-        "TIME",
-        "ENTRIES",
-        "EARNINGS",
-        gw = group_width,
+        "  {:<gw$}  {:>tw$}  {:>ew$}  {:>rw$}\n",
+        "GROUP", "TIME", "ENTRIES", "EARNINGS",
     ));
 
     // Rows
-    for row in &result.rows {
-        let earnings = match row.earnings_cents {
-            Some(c) => format!("${}.{:02}", c / 100, c % 100),
-            None => "\u{2014}".to_string(),
-        };
+    for (group, time, entries, earnings) in &formatted {
         out.push_str(&format!(
-            "  {:<gw$}  {:>10}  {:>7}  {:>10}\n",
-            row.group,
-            format_duration_human(row.total_secs),
-            row.entry_count,
-            earnings,
-            gw = group_width,
+            "  {:<gw$}  {:>tw$}  {:>ew$}  {:>rw$}\n",
+            group, time, entries, earnings,
         ));
     }
 
     // Footer
     out.push_str(&format!(
-        "  {:<gw$}  {:>10}  {:>7}\n",
-        "Total",
-        format_duration_human(result.unique_total_secs),
-        result.unique_entry_count,
-        gw = group_width,
+        "  {:<gw$}  {:>tw$}  {:>ew$}  {:>rw$}\n",
+        "Total", total_time, total_entries, "",
     ));
 
     out
