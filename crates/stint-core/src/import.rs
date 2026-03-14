@@ -66,20 +66,15 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
             continue;
         }
 
-        let fields: Vec<&str> = line.split(',').collect();
+        let fields = split_csv_line(line);
 
         let project_name = match fields.get(project_col) {
-            Some(name) => name.trim().trim_matches('"'),
-            None => {
+            Some(name) if !name.is_empty() => name.as_str(),
+            _ => {
                 result.rows_skipped += 1;
                 continue;
             }
         };
-
-        if project_name.is_empty() {
-            result.rows_skipped += 1;
-            continue;
-        }
 
         // Find or create the project
         let project = match storage.get_project_by_name(project_name)? {
@@ -102,21 +97,32 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
             }
         };
 
-        // Parse start time
-        let start = start_col
+        // Parse start time (skip row if missing/unparseable)
+        let start = match start_col
             .and_then(|i| fields.get(i))
-            .and_then(|s| parse_datetime(s.trim().trim_matches('"')))
-            .unwrap_or(now);
+            .and_then(|s| parse_datetime(s))
+        {
+            Some(dt) => dt,
+            None => {
+                // No start column or unparseable — use today if duration-only import
+                if duration_col.is_some() {
+                    now.date().midnight().assume_utc()
+                } else {
+                    result.rows_skipped += 1;
+                    continue;
+                }
+            }
+        };
 
         // Parse end time
         let end = end_col
             .and_then(|i| fields.get(i))
-            .and_then(|s| parse_datetime(s.trim().trim_matches('"')));
+            .and_then(|s| parse_datetime(s));
 
         // Parse duration
         let duration_secs = duration_col
             .and_then(|i| fields.get(i))
-            .and_then(|s| s.trim().trim_matches('"').parse::<i64>().ok())
+            .and_then(|s| s.parse::<i64>().ok())
             .or_else(|| end.map(|e| (e - start).whole_seconds()));
 
         // Ensure end is set (imported entries should always be completed)
@@ -125,7 +131,7 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
         // Parse notes
         let notes = notes_col
             .and_then(|i| fields.get(i))
-            .map(|s| s.trim().trim_matches('"').to_string())
+            .map(|s| s.to_string())
             .filter(|s| !s.is_empty());
 
         let entry = TimeEntry {
@@ -149,6 +155,37 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
     }
 
     Ok(result)
+}
+
+/// Splits a CSV line respecting quoted fields (RFC 4180).
+fn split_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes => {
+                if chars.peek() == Some(&'"') {
+                    current.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            }
+            '"' if !in_quotes && current.is_empty() => {
+                in_quotes = true;
+            }
+            ',' if !in_quotes => {
+                fields.push(current.trim().to_string());
+                current = String::new();
+            }
+            _ => current.push(ch),
+        }
+    }
+    fields.push(current.trim().to_string());
+    fields
 }
 
 /// Parses a datetime string in common formats.

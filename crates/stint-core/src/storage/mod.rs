@@ -63,6 +63,9 @@ pub trait Storage {
     /// Lists entries matching the given filter.
     fn list_entries(&self, filter: &EntryFilter) -> Result<Vec<TimeEntry>, StorageError>;
 
+    /// Returns the most recent time entry.
+    fn get_last_entry(&self) -> Result<Option<TimeEntry>, StorageError>;
+
     /// Updates an existing time entry.
     fn update_entry(&self, entry: &TimeEntry) -> Result<(), StorageError>;
 

@@ -346,7 +346,7 @@ fn detect_or_discover(
         return Ok(None);
     }
 
-    // Third: try .git auto-discovery
+    // Fourth: try .git auto-discovery
     let discovered = match discover::discover_project(cwd) {
         Some(d) => d,
         None => return Ok(None),

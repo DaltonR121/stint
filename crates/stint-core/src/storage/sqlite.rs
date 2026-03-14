@@ -732,6 +732,22 @@ impl Storage for SqliteStorage {
         Ok(hydrated)
     }
 
+    fn get_last_entry(&self) -> Result<Option<TimeEntry>, StorageError> {
+        let entry = self
+            .conn
+            .query_row(
+                "SELECT * FROM entries ORDER BY start DESC LIMIT 1",
+                [],
+                |row| self.entry_from_row(row),
+            )
+            .optional()?;
+
+        match entry {
+            Some(e) => Ok(Some(self.hydrate_entry(e)?)),
+            None => Ok(None),
+        }
+    }
+
     fn update_entry(&self, entry: &TimeEntry) -> Result<(), StorageError> {
         let tx = self.conn.unchecked_transaction()?;
         let end_str = entry.end.as_ref().map(Self::fmt_ts);

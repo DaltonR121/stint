@@ -82,7 +82,11 @@ impl StintConfig {
         }
 
         if let Some(v) = values.get("auto_discover") {
-            config.auto_discover = v != "false" && v != "0";
+            match v.trim().to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => config.auto_discover = true,
+                "false" | "0" | "no" | "off" => config.auto_discover = false,
+                _ => {} // Unknown value — keep default
+            }
         }
 
         if let Some(v) = values.get("default_tags") {

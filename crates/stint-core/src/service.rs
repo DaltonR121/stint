@@ -237,10 +237,7 @@ impl<S: Storage> StintService<S> {
 
     /// Returns the most recent time entry with its project.
     pub fn get_last_entry(&self) -> Result<Option<(TimeEntry, Project)>, StintError> {
-        let filter = EntryFilter::default();
-        let entries = self.storage.list_entries(&filter)?;
-        // list_entries returns DESC by start, so first is most recent
-        match entries.into_iter().next() {
+        match self.storage.get_last_entry()? {
             Some(entry) => {
                 let project = self
                     .storage

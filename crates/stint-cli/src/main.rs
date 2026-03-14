@@ -416,7 +416,7 @@ fn cmd_summary() {
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
 
     // Today
-    let today_start = now.date().midnight().assume_utc();
+    let today_start = now.replace_time(time::Time::MIDNIGHT);
     let today_filter = stint_core::models::entry::EntryFilter {
         from: Some(today_start),
         ..Default::default()
@@ -487,9 +487,7 @@ fn cmd_edit(duration: Option<i64>, notes: Option<String>) {
 
     if let Some(dur) = duration {
         entry.duration_secs = Some(dur);
-        if let Some(start) = Some(entry.start) {
-            entry.end = Some(start + time::Duration::seconds(dur));
-        }
+        entry.end = Some(entry.start + time::Duration::seconds(dur));
         changed = true;
     }
 
@@ -872,11 +870,6 @@ fn cmd_project_delete(name: String, force: bool) {
     }
 }
 
-/// Handles the `_hook` command (called by shell hooks).
-///
-/// Must never call process::exit or print to stdout/stderr — the hook
-/// must be invisible to the user's shell. Uses open_existing to skip
-/// directory creation and migrations for <2ms performance.
 /// Handles the `project ignore` command.
 fn cmd_project_ignore(path: PathBuf) {
     let resolved = match path.canonicalize() {
@@ -921,13 +914,24 @@ fn cmd_project_unignore(path: PathBuf) {
     }
 }
 
+/// Handles the `_hook` command (called by shell hooks).
+///
+/// Must never call process::exit or print to stdout/stderr — the hook
+/// must be invisible to the user's shell. Uses open_existing to skip
+/// directory creation and migrations for <2ms performance.
+/// Config is loaded only if the file exists to avoid unnecessary I/O.
 fn cmd_hook(cwd: PathBuf, pid: u32, shell: Option<String>, exit: bool) {
     let path = SqliteStorage::default_path();
     let storage = match SqliteStorage::open_existing(&path) {
         Ok(s) => s,
         Err(_) => return, // Silently bail — DB doesn't exist yet or can't open
     };
-    let config = stint_core::config::StintConfig::load();
+    let config_path = stint_core::config::StintConfig::default_path();
+    let config = if config_path.exists() {
+        stint_core::config::StintConfig::load_from(&config_path).unwrap_or_default()
+    } else {
+        stint_core::config::StintConfig::default()
+    };
     if exit {
         let _ = hook::handle_hook_exit(&storage, pid, &config);
     } else {
