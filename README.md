@@ -20,18 +20,19 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 ### Available Now
 - **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers transparently
 - **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
-- **Multi-shell support** — bash, zsh, and fish hook scripts via `stint shell <type>`
+- **Multi-shell support** — bash, zsh, and fish via `stint shell <type>` (advanced/manual hook installation)
 - **Multi-terminal handling** — merge mode keeps one timer per project across terminals
 - **Idle detection** — auto-pause after 5 minutes of inactivity, resumes on next prompt
 - **Project management** — register projects with paths, tags, and hourly rates; archive and delete
 - **Rich reporting** — grouped by project or tag, with CSV/JSON/Markdown export
 - **Retroactive entries** — `stint add 2h30m --date yesterday --notes "..."` with human-friendly duration and date parsing
+- **TUI dashboard** — `stint dashboard` with live timer, today's entries, and weekly project totals
+- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically (recommended)
 - **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
 - **Project auto-discovery** — automatically detect unregistered projects from `.git` repos or `.stint.toml` markers (no manual `project add` needed)
 - **Invoicing** — `stint invoice <project>` with hourly rate support
-- **TUI dashboard** — interactive terminal UI with calendar heatmaps and live timers
 - **Import/export** — migrate from Watson, Toggl, or generic CSV
 - **Optional cloud sync** — self-hostable web dashboard with team features (future)
 
@@ -57,21 +58,21 @@ stint status
 stint log --from "last monday"
 stint report --group-by project
 stint report --format csv > timesheet.csv
+
+# Interactive dashboard
+stint dashboard
 ```
 
 ### Auto-Tracking
 
-Add one line to your shell config and tracking happens automatically:
+Set up auto-tracking with one command:
 
 ```sh
-# Bash (~/.bashrc)
-eval "$(stint shell bash)"
+# Install the shell hook (appends to your shell config)
+stint init bash    # or: stint init zsh / stint init fish
 
-# Zsh (~/.zshrc)
-eval "$(stint shell zsh)"
-
-# Fish (~/.config/fish/config.fish)
-stint shell fish | source
+# Or add manually to your shell config:
+# eval "$(stint shell bash)"
 ```
 
 Navigate to a registered project directory and Stint starts tracking. Switch directories — it switches. In merge mode, the timer stops when the last terminal tracking that project closes or leaves the directory. No manual intervention.
@@ -102,8 +103,8 @@ All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant
 | 0 — Foundation | Project scaffolding, data model, CI | Done |
 | 1 — Core CLI | Manual time tracking, reporting, export | Done |
 | 2 — Auto-Tracking | Shell hooks, idle detection, multi-terminal | Done |
-| **3 — TUI + v0.1.0** | Interactive dashboard, first public release | **Up Next** |
-| 4 — Integrations | Toggl/Clockify sync, editor plugins, local API | Planned |
+| 3 — TUI + v0.1.0 | Interactive dashboard, first public release | Done |
+| **4 — Integrations** | Toggl/Clockify sync, editor plugins, local API | **Up Next** |
 | 5 — Cloud + Web | Optional hosted sync, web dashboard, billing | Planned |
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
