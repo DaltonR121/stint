@@ -78,7 +78,52 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
             }
         };
 
-        // Find or create the project
+        // Validate row data BEFORE creating any project
+
+        // Parse start time (skip row if missing/unparseable)
+        let start = match start_col
+            .and_then(|i| fields.get(i))
+            .and_then(|s| parse_datetime(s))
+        {
+            Some(dt) => dt,
+            None => {
+                result.rows_skipped += 1;
+                continue;
+            }
+        };
+
+        // Parse end time
+        let end = end_col
+            .and_then(|i| fields.get(i))
+            .and_then(|s| parse_datetime(s));
+
+        // Parse duration (reject negative values)
+        let duration_secs = duration_col
+            .and_then(|i| fields.get(i))
+            .and_then(|s| s.parse::<i64>().ok())
+            .filter(|&d| d >= 0)
+            .or_else(|| end.map(|e| (e - start).whole_seconds()))
+            .filter(|&d| d >= 0);
+
+        // Ensure end is set (imported entries should always be completed)
+        let end = end.or_else(|| duration_secs.map(|d| start + time::Duration::seconds(d)));
+
+        // Skip rows that can't produce a completed entry or have inverted ranges
+        match end {
+            Some(e) if e >= start => {}
+            _ => {
+                result.rows_skipped += 1;
+                continue;
+            }
+        }
+
+        // Parse notes
+        let notes = notes_col
+            .and_then(|i| fields.get(i))
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+
+        // Row is valid — now find or create the project
         let project = match storage.get_project_by_name(project_name)? {
             Some(p) => p,
             None => {
@@ -99,44 +144,6 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
             }
         };
 
-        // Parse start time (skip row if missing/unparseable)
-        let start = match start_col
-            .and_then(|i| fields.get(i))
-            .and_then(|s| parse_datetime(s))
-        {
-            Some(dt) => dt,
-            None => {
-                result.rows_skipped += 1;
-                continue;
-            }
-        };
-
-        // Parse end time
-        let end = end_col
-            .and_then(|i| fields.get(i))
-            .and_then(|s| parse_datetime(s));
-
-        // Parse duration
-        let duration_secs = duration_col
-            .and_then(|i| fields.get(i))
-            .and_then(|s| s.parse::<i64>().ok())
-            .or_else(|| end.map(|e| (e - start).whole_seconds()));
-
-        // Ensure end is set (imported entries should always be completed)
-        let end = end.or_else(|| duration_secs.map(|d| start + time::Duration::seconds(d)));
-
-        // Skip rows that can't produce a completed entry
-        if end.is_none() {
-            result.rows_skipped += 1;
-            continue;
-        }
-
-        // Parse notes
-        let notes = notes_col
-            .and_then(|i| fields.get(i))
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
-
         let entry = TimeEntry {
             id: EntryId::new(),
             project_id: project.id.clone(),
@@ -153,7 +160,13 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
 
         match storage.create_entry(&entry) {
             Ok(()) => result.entries_imported += 1,
-            Err(_) => result.rows_skipped += 1,
+            Err(crate::storage::error::StorageError::Database(ref e))
+                if e.to_string().contains("UNIQUE constraint") =>
+            {
+                // Duplicate entry (e.g., unique running-per-project constraint) — skip
+                result.rows_skipped += 1;
+            }
+            Err(e) => return Err(e.into()), // Real storage failure — abort
         }
     }
 
