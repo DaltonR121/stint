@@ -5,7 +5,7 @@
 [![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange)]()
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
 
-> **This project is in early development and is not yet functional.** There is no installable binary, no working CLI, and no released version. If you're interested, star the repo and watch for updates. Contributions are not expected at this stage.
+> **This project is in early development.** The CLI is functional for manual time tracking and reporting, but auto-tracking (shell hooks) is not yet implemented. There is no published binary or crate yet — build from source to try it out.
 
 Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the terminal — it stops. No buttons to click, no browser tabs to manage.
 
@@ -18,37 +18,26 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 ## Features
 
 ### Available Now
-> Stint is in **pre-alpha**. Nothing is available yet — we're building the foundation.
+- **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
+- **Project management** — register projects with paths, tags, and hourly rates; archive and delete
+- **Rich reporting** — grouped by project or tag, with CSV/JSON/Markdown export
+- **Retroactive entries** — `stint add 2h30m --date yesterday --notes "..."` with human-friendly duration and date parsing
+- **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
 - **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers
-- **Manual tracking** — `stint start`, `stint stop`, `stint add` for full control
 - **Project detection** — auto-detect from git repos or `.stint.toml` config files
-- **Rich reporting** — daily/weekly summaries, grouped by project or tag, with CSV/JSON/Markdown export
 - **Invoicing** — `stint invoice <project>` with hourly rate support
 - **TUI dashboard** — interactive terminal UI with calendar heatmaps and live timers
 - **Multi-shell support** — bash, zsh, fish, with tmux integration
 - **Multi-terminal handling** — merge or parallel modes for concurrent sessions
 - **Idle detection** — auto-pause after configurable inactivity
-- **Pluggable storage** — SQLite by default, trait-based architecture for future adapters
 - **Import/export** — migrate from Watson, Toggl, or generic CSV
 - **Optional cloud sync** — self-hostable web dashboard with team features (future)
 
 ## Quick Start
 
-> **Note:** Stint is not yet installable. These instructions will work once Phase 1 is complete.
-
-### Install
-
-```sh
-# From crates.io
-cargo install stint
-
-# Or via Homebrew (macOS/Linux)
-brew install daltonr121/tap/stint
-
-# Or download a pre-built binary from GitHub Releases
-```
+> **Note:** Stint is not yet published to crates.io. Build from source for now (see [Building From Source](#building-from-source)).
 
 ### Basic Usage
 
@@ -64,6 +53,7 @@ stint stop
 stint add my-app 2h30m --date yesterday --notes "Forgot to track"
 
 # View your time
+stint status
 stint log --from "last monday"
 stint report --group-by project
 stint report --format csv > timesheet.csv
@@ -121,9 +111,9 @@ All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant
 
 | Phase | Milestone | Status |
 |-------|-----------|--------|
-| **0 — Foundation** | Project scaffolding, data model, CI | **In Progress** |
-| 1 — Core CLI | Manual time tracking, reporting, export | Planned |
-| 2 — Auto-Tracking | Shell hooks, idle detection, multi-terminal | Planned |
+| 0 — Foundation | Project scaffolding, data model, CI | Done |
+| 1 — Core CLI | Manual time tracking, reporting, export | Done |
+| **2 — Auto-Tracking** | Shell hooks, idle detection, multi-terminal | **Up Next** |
 | 3 — TUI + v0.1.0 | Interactive dashboard, first public release | Planned |
 | 4 — Integrations | Toggl/Clockify sync, editor plugins, local API | Planned |
 | 5 — Cloud + Web | Optional hosted sync, web dashboard, billing | Planned |
@@ -156,10 +146,8 @@ cargo test
 stint/
   Cargo.toml                # Workspace root
   crates/
-    stint-core/             # Domain logic, storage trait, data models
-    stint-cli/              # CLI interface, shell hooks, commands
-  shell/                    # Shell integration scripts (bash/zsh/fish)
-  docs/                     # Architecture Decision Records
+    stint-core/             # Domain logic, storage, data models, services
+    stint-cli/              # CLI commands and user interaction
 ```
 
 ## Contributing

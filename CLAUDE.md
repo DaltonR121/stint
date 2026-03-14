@@ -36,4 +36,6 @@ FSL-1.1-MIT — free to self-host, commercial hosting reserved, converts to MIT 
 - No telemetry, no analytics, no phone-home behavior
 
 ## Current Phase
-Phase 0 — Foundation (project scaffolding, data model, CI)
+Phase 2 — Auto-Tracking (shell hooks, idle detection, multi-terminal)
+
+Phases 0 (Foundation) and 1 (Core CLI) are complete.
