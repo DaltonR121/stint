@@ -47,7 +47,10 @@ fn parse_cents(s: &str) -> Result<i64, String> {
         _ => return Err(format!("rate has too many decimal places: '{s}'")),
     };
 
-    Ok(dollars * 100 + cents)
+    dollars
+        .checked_mul(100)
+        .and_then(|d| d.checked_add(cents))
+        .ok_or_else(|| format!("invalid rate: '{s}'"))
 }
 
 /// Terminal-native project time tracker.
