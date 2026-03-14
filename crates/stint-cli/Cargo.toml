@@ -5,10 +5,24 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Terminal-native project time tracker"
+readme = "../../README.md"
+keywords = ["time-tracking", "cli", "tui", "productivity"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "stint"
 path = "src/main.rs"
+
+[package.metadata.deb]
+name = "stint"
+maintainer = "Ryan Dalton <ryan@mosaicridge.com>"
+copyright = "2024-2026 Mosaic Ridge LLC"
+extended-description = "Terminal-native project time tracker with automatic shell hook tracking, manual start/stop, reporting (CSV/JSON/Markdown), and an interactive TUI dashboard."
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/stint", "usr/bin/", "755"],
+]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

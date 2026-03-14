@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Release & Packaging
+- `.deb` package generation via `cargo-deb` in release workflow
+- Pre-built binaries for Linux (x86_64, aarch64), macOS (x86_64, Apple Silicon), and Windows (x86_64)
+- Install instructions for GitHub Releases, `.deb`, and building from source
+
 #### Phase 3 — TUI + v0.1.0
 - `stint dashboard` (alias: `stint tui`) interactive terminal dashboard
 - Live-ticking timer status in header (green when tracking, dim when idle)

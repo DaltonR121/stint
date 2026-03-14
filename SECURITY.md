@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Stint is in pre-alpha. Security fixes will be applied to the latest version only.
+Security fixes will be applied to the latest release only.
 
 | Version | Supported |
 |---------|-----------|
@@ -36,7 +36,7 @@ Instead, please report vulnerabilities privately:
 Stint is a local-first CLI tool. The primary security concerns are:
 
 - **Local data integrity** — unauthorized access to the SQLite database
-- **Shell hook safety** — the hook executes on every prompt; it must not introduce injection vectors
+- **Shell hook safety** — the hook executes on every prompt and writes to the database; it must not introduce injection vectors
 - **Dependency supply chain** — malicious or vulnerable Rust crates
 - **Future: API server** — `stint serve` will expose a local HTTP API (Phase 4)
 - **Future: Cloud sync** — authentication and data privacy (Phase 5)
@@ -44,6 +44,5 @@ Stint is a local-first CLI tool. The primary security concerns are:
 ## Design Principles
 
 - Data is stored locally by default with no network access
-- Shell hooks execute only read operations against the database on the hot path
 - No telemetry, no analytics, no phone-home behavior
 - Dependencies are reviewed and kept minimal
