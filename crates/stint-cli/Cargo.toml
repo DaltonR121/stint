@@ -11,4 +11,6 @@ name = "stint"
 path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 stint-core = { path = "../stint-core" }
+time = "0.3"
