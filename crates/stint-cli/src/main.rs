@@ -245,6 +245,18 @@ enum ProjectCommands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Ignore a directory for auto-discovery (prevents auto-tracking).
+    Ignore {
+        /// Directory path to ignore.
+        path: PathBuf,
+    },
+
+    /// Remove a directory from the ignore list.
+    Unignore {
+        /// Directory path to unignore.
+        path: PathBuf,
+    },
 }
 
 /// Opens the database and creates a service, exiting on failure.
@@ -650,6 +662,47 @@ fn cmd_project_delete(name: String, force: bool) {
 /// Must never call process::exit or print to stdout/stderr — the hook
 /// must be invisible to the user's shell. Uses open_existing to skip
 /// directory creation and migrations for <2ms performance.
+/// Handles the `project ignore` command.
+fn cmd_project_ignore(path: PathBuf) {
+    let resolved = match path.canonicalize() {
+        Ok(abs) => abs,
+        Err(e) => {
+            eprintln!("error: invalid path '{}': {e}", path.display());
+            process::exit(1);
+        }
+    };
+
+    let storage = open_storage();
+    match storage.add_ignored_path(&resolved) {
+        Ok(()) => println!("Ignoring '{}'", resolved.display()),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `project unignore` command.
+fn cmd_project_unignore(path: PathBuf) {
+    let resolved = match path.canonicalize() {
+        Ok(abs) => abs,
+        Err(e) => {
+            eprintln!("error: invalid path '{}': {e}", path.display());
+            process::exit(1);
+        }
+    };
+
+    let storage = open_storage();
+    match storage.remove_ignored_path(&resolved) {
+        Ok(true) => println!("Removed '{}' from ignore list", resolved.display()),
+        Ok(false) => println!("'{}' was not in the ignore list", resolved.display()),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 fn cmd_hook(cwd: PathBuf, pid: u32, shell: Option<String>, exit: bool) {
     let path = SqliteStorage::default_path();
     let storage = match SqliteStorage::open_existing(&path) {
@@ -814,6 +867,8 @@ fn main() {
             ProjectCommands::List { all } => cmd_project_list(all),
             ProjectCommands::Archive { name } => cmd_project_archive(name),
             ProjectCommands::Delete { name, force } => cmd_project_delete(name, force),
+            ProjectCommands::Ignore { path } => cmd_project_ignore(path),
+            ProjectCommands::Unignore { path } => cmd_project_unignore(path),
         },
         Commands::Shell { shell } => cmd_shell(shell),
         Commands::Init { shell } => cmd_init(shell),

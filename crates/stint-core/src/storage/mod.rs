@@ -95,4 +95,18 @@ pub trait Storage {
         &self,
         older_than: OffsetDateTime,
     ) -> Result<Vec<ShellSession>, StorageError>;
+
+    // --- Ignored Paths ---
+
+    /// Adds a path to the ignore list for auto-discovery.
+    fn add_ignored_path(&self, path: &Path) -> Result<(), StorageError>;
+
+    /// Removes a path from the ignore list.
+    fn remove_ignored_path(&self, path: &Path) -> Result<bool, StorageError>;
+
+    /// Checks if a path (or any of its ancestors) is in the ignore list.
+    fn is_path_ignored(&self, path: &Path) -> Result<bool, StorageError>;
+
+    /// Lists all ignored paths.
+    fn list_ignored_paths(&self) -> Result<Vec<std::path::PathBuf>, StorageError>;
 }

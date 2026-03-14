@@ -16,7 +16,7 @@ use super::Storage;
 
 /// Current schema version. Increment when adding migrations.
 #[cfg(test)]
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 /// SQLite-backed storage for Stint.
 pub struct SqliteStorage {
@@ -100,6 +100,9 @@ impl SqliteStorage {
         }
         if current_version < 2 {
             self.migrate_v2()?;
+        }
+        if current_version < 3 {
+            self.migrate_v3()?;
         }
 
         Ok(())
@@ -197,6 +200,21 @@ impl SqliteStorage {
                 ON entries(project_id) WHERE end_time IS NULL;
 
             INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '2');",
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration v3: ignored paths table and project source column for auto-discovery.
+    fn migrate_v3(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ignored_paths (
+                path TEXT PRIMARY KEY
+            );
+
+            ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+
+            INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '3');",
         )?;
 
         Ok(())
@@ -862,6 +880,53 @@ impl Storage for SqliteStorage {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(sessions)
+    }
+
+    // --- Ignored Paths ---
+
+    fn add_ignored_path(&self, path: &Path) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO ignored_paths (path) VALUES (?1)",
+            params![path.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
+    fn remove_ignored_path(&self, path: &Path) -> Result<bool, StorageError> {
+        let changed = self.conn.execute(
+            "DELETE FROM ignored_paths WHERE path = ?1",
+            params![path.to_string_lossy()],
+        )?;
+        Ok(changed > 0)
+    }
+
+    fn is_path_ignored(&self, path: &Path) -> Result<bool, StorageError> {
+        let path_str = path.to_string_lossy();
+        // Check if the path itself or any of its ancestors is ignored
+        let ignored: bool = self.conn.query_row(
+            "SELECT EXISTS(
+                    SELECT 1 FROM ignored_paths
+                    WHERE ?1 = path
+                       OR (LENGTH(?1) > LENGTH(path)
+                           AND SUBSTR(?1, 1, LENGTH(path) + 1) = path || '/')
+                )",
+            params![path_str],
+            |row| row.get(0),
+        )?;
+        Ok(ignored)
+    }
+
+    fn list_ignored_paths(&self) -> Result<Vec<PathBuf>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM ignored_paths ORDER BY path")?;
+        let paths = stmt
+            .query_map([], |row| {
+                let p: String = row.get(0)?;
+                Ok(PathBuf::from(p))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(paths)
     }
 }
 

@@ -7,9 +7,10 @@ use std::path::Path;
 
 use time::OffsetDateTime;
 
+use crate::discover;
 use crate::error::StintError;
 use crate::models::entry::{EntrySource, TimeEntry};
-use crate::models::project::ProjectStatus;
+use crate::models::project::{Project, ProjectStatus};
 use crate::models::session::ShellSession;
 use crate::models::types::{EntryId, ProjectId, SessionId};
 use crate::storage::Storage;
@@ -68,9 +69,8 @@ fn handle_cold_start(
     // Reap stale sessions opportunistically
     let _ = reap_stale_sessions(storage, now);
 
-    // Detect project from cwd
-    let project = storage.get_project_by_path(cwd)?;
-    let active_project = project.filter(|p| p.status == ProjectStatus::Active);
+    // Detect project from cwd (registered paths first, then .git auto-discovery)
+    let active_project = detect_or_discover(storage, cwd, now)?;
 
     let project_id = active_project.as_ref().map(|p| p.id.clone());
 
@@ -117,8 +117,7 @@ fn handle_warm_path(
     }
 
     // Need to detect project (cwd changed or idle gap)
-    let new_project = storage.get_project_by_path(cwd)?;
-    let new_active = new_project.filter(|p| p.status == ProjectStatus::Active);
+    let new_active = detect_or_discover(storage, cwd, now)?;
     let new_project_id = new_active.as_ref().map(|p| p.id.clone());
 
     let old_project_id = session.current_project_id.clone();
@@ -309,6 +308,63 @@ fn try_create_hook_entry(
         storage.create_entry(&entry)?;
     }
     Ok(())
+}
+
+/// Detects a project from registered paths, or auto-discovers from `.git`.
+///
+/// 1. Checks registered project paths via `get_project_by_path`
+/// 2. If not found, checks if the path is ignored
+/// 3. If not ignored, looks for a `.git` directory up the tree
+/// 4. If found, auto-creates a project with `source: discovered`
+fn detect_or_discover(
+    storage: &impl Storage,
+    cwd: &Path,
+    now: OffsetDateTime,
+) -> Result<Option<Project>, StintError> {
+    // First: check registered projects
+    let registered = storage.get_project_by_path(cwd)?;
+    if let Some(project) = registered {
+        if project.status == ProjectStatus::Active {
+            return Ok(Some(project));
+        }
+        return Ok(None);
+    }
+
+    // Second: check if this path is ignored
+    if storage.is_path_ignored(cwd).unwrap_or(false) {
+        return Ok(None);
+    }
+
+    // Third: try .git auto-discovery
+    let discovered = match discover::discover_project(cwd) {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+
+    // Check if the discovered root is ignored
+    if storage.is_path_ignored(&discovered.root).unwrap_or(false) {
+        return Ok(None);
+    }
+
+    // Check if a project with this name already exists (e.g., archived or different path)
+    if storage.get_project_by_name(&discovered.name)?.is_some() {
+        return Ok(None);
+    }
+
+    // Auto-create the project
+    let project = Project {
+        id: ProjectId::new(),
+        name: discovered.name,
+        paths: vec![discovered.root],
+        tags: vec![],
+        hourly_rate_cents: None,
+        status: ProjectStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+
+    storage.create_project(&project)?;
+    Ok(Some(project))
 }
 
 /// Creates a new hook-sourced time entry.
@@ -641,5 +697,77 @@ mod tests {
         // Entry should be stopped at last_heartbeat time
         let stopped = storage.get_entry(&entry.id).unwrap().unwrap();
         assert!(!stopped.is_running());
+    }
+
+    #[test]
+    fn auto_discovers_git_repo() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        let action = handle_hook(&storage, 1234, &project_dir, None).unwrap();
+
+        assert!(matches!(action, HookAction::SessionStarted { .. }));
+
+        // Project should have been auto-created
+        let project = storage.get_project_by_name("my-project").unwrap().unwrap();
+        assert_eq!(project.paths[0], project_dir);
+
+        // Entry should be running
+        assert!(storage.get_any_running_entry().unwrap().is_some());
+    }
+
+    #[test]
+    fn auto_discovers_from_subdirectory() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+        let sub = project_dir.join("src").join("lib");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        handle_hook(&storage, 1234, &sub, None).unwrap();
+
+        // Should discover the project root, not the subdirectory
+        let project = storage.get_project_by_name("my-project").unwrap().unwrap();
+        assert_eq!(project.paths[0], project_dir);
+    }
+
+    #[test]
+    fn ignored_path_prevents_discovery() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        // Ignore this path
+        storage.add_ignored_path(&project_dir).unwrap();
+
+        let action = handle_hook(&storage, 1234, &project_dir, None).unwrap();
+
+        assert_eq!(action, HookAction::SessionCreated);
+        assert!(storage.get_project_by_name("dotfiles").unwrap().is_none());
+    }
+
+    #[test]
+    fn registered_project_takes_precedence_over_discovery() {
+        let storage = setup();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_dir = tmp.path().join("my-project");
+        std::fs::create_dir_all(project_dir.join(".git")).unwrap();
+
+        // Register with a custom name
+        create_project(&storage, "custom-name", &project_dir.to_string_lossy());
+
+        handle_hook(&storage, 1234, &project_dir, None).unwrap();
+
+        // Should use the registered name, not the directory name
+        assert!(storage
+            .get_project_by_name("custom-name")
+            .unwrap()
+            .is_some());
+        // Should NOT have created a "my-project" entry
+        assert!(storage.get_project_by_name("my-project").unwrap().is_none());
     }
 }
