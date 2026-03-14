@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apt repository on GitHub Pages with GPG-signed packages
 - Universal install script (`curl | sh` with auto-detection of OS and package manager)
 - Automated crates.io publishing in release workflow with idempotent version checks
-- License changed to MIT (previously FSL-1.1-MIT → BSL-1.1 → MIT)
+- License changed to MIT (previously FSL-1.1-MIT → BSL-1.1)
 
 #### Phase 4 — Zero-Config & Daily Use
 - `.git` auto-discovery: hook detects git repos and creates projects automatically
