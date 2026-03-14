@@ -106,8 +106,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Verify packages
+        run: |
+          cargo package -p stint-core --allow-dirty
+          cargo package -p stint-server --allow-dirty
+          cargo package -p stint-cli --allow-dirty
+
       - name: Publish stint-core
-        run: cargo publish -p stint-core --no-verify
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | grep -o '"stint-core","version":"[^"]*"' | cut -d'"' -f6)
+          if curl -sf "https://crates.io/api/v1/crates/stint-core/$VERSION" > /dev/null 2>&1; then
+            echo "stint-core $VERSION already published, skipping"
+          else
+            cargo publish -p stint-core --no-verify
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -115,7 +127,13 @@ jobs:
         run: sleep 30
 
       - name: Publish stint-server
-        run: cargo publish -p stint-server --no-verify
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | grep -o '"stint-server","version":"[^"]*"' | cut -d'"' -f6)
+          if curl -sf "https://crates.io/api/v1/crates/stint-server/$VERSION" > /dev/null 2>&1; then
+            echo "stint-server $VERSION already published, skipping"
+          else
+            cargo publish -p stint-server --no-verify
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -123,7 +141,13 @@ jobs:
         run: sleep 30
 
       - name: Publish stint-cli
-        run: cargo publish -p stint-cli --no-verify
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | grep -o '"stint-cli","version":"[^"]*"' | cut -d'"' -f6)
+          if curl -sf "https://crates.io/api/v1/crates/stint-cli/$VERSION" > /dev/null 2>&1; then
+            echo "stint-cli $VERSION already published, skipping"
+          else
+            cargo publish -p stint-cli --no-verify
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
