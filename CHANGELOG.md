@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 3 — TUI + v0.1.0
+- `stint dashboard` (alias: `stint tui`) interactive terminal dashboard
+- Live-ticking timer status in header (green when tracking, dim when idle)
+- Today's entries panel with time, project, duration, source, and notes
+- Weekly project totals panel with proportional bar chart
+- Keyboard navigation: q/esc quit, tab switches panels, arrows scroll
+- RAII terminal guard for panic-safe cleanup
+- `stint init bash|zsh|fish` one-command shell hook installation
+- Duplicate detection for already-installed hooks
+
 #### Phase 2 — Auto-Tracking
 - `stint shell bash|zsh|fish` outputs hook scripts for `eval` in shell config
 - `stint _hook` (hidden) called by shell hooks on every prompt render
