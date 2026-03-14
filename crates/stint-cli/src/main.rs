@@ -569,10 +569,19 @@ fn cmd_project_archive(name: String) {
 fn cmd_project_delete(name: String, force: bool) {
     if !force {
         print!("Delete project '{name}' and all its entries? [y/N] ");
-        io::stdout().flush().unwrap();
+        if let Err(e) = io::stdout().flush() {
+            eprintln!("error: failed to flush stdout: {e}");
+            process::exit(1);
+        }
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        match io::stdin().read_line(&mut input) {
+            Ok(0) | Err(_) => {
+                println!("Cancelled.");
+                return;
+            }
+            Ok(_) => {}
+        }
 
         if !input.trim().eq_ignore_ascii_case("y") {
             println!("Cancelled.");
