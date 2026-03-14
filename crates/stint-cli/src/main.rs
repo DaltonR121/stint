@@ -138,8 +138,8 @@ enum Commands {
         #[arg(long, default_value = "project")]
         group_by: String,
 
-        /// Output format: "markdown", "csv", or "json".
-        #[arg(long, default_value = "markdown")]
+        /// Output format: "table", "markdown", "csv", or "json".
+        #[arg(long, default_value = "table")]
         format: String,
 
         /// Start date filter.

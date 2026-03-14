@@ -31,6 +31,8 @@ impl GroupBy {
 /// Output format for reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportFormat {
+    /// Plain-text aligned table for terminal display.
+    Table,
     /// Markdown table.
     Markdown,
     /// Comma-separated values.
@@ -43,11 +45,12 @@ impl ReportFormat {
     /// Parses a format string.
     pub fn from_str_value(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
+            "table" => Ok(Self::Table),
             "markdown" | "md" => Ok(Self::Markdown),
             "csv" => Ok(Self::Csv),
             "json" => Ok(Self::Json),
             _ => Err(format!(
-                "unknown format: '{s}' (use 'markdown', 'csv', or 'json')"
+                "unknown format: '{s}' (use 'table', 'markdown', 'csv', or 'json')"
             )),
         }
     }
@@ -183,6 +186,7 @@ pub fn generate_report(entries: &[(TimeEntry, Project)], group_by: &GroupBy) -> 
 /// Formats report rows into the specified output format.
 pub fn format_report(result: &ReportResult, format: &ReportFormat) -> String {
     match format {
+        ReportFormat::Table => format_table(result),
         ReportFormat::Markdown => format_markdown(result),
         ReportFormat::Csv => format_csv(&result.rows),
         ReportFormat::Json => format_json(&result.rows),
@@ -201,6 +205,61 @@ fn escape_csv(field: &str) -> String {
 /// Escapes a string for use in a Markdown table cell.
 fn escape_markdown(field: &str) -> String {
     field.replace('|', "\\|").replace('\n', " ")
+}
+
+/// Renders rows as a plain-text aligned table for terminal display.
+fn format_table(result: &ReportResult) -> String {
+    if result.rows.is_empty() {
+        return "No entries found.\n".to_string();
+    }
+
+    // Compute column widths
+    let group_width = result
+        .rows
+        .iter()
+        .map(|r| r.group.len())
+        .max()
+        .unwrap_or(5)
+        .max(5); // minimum "Group" header width
+
+    let mut out = String::new();
+
+    // Header
+    out.push_str(&format!(
+        "  {:<gw$}  {:>10}  {:>7}  {:>10}\n",
+        "GROUP",
+        "TIME",
+        "ENTRIES",
+        "EARNINGS",
+        gw = group_width,
+    ));
+
+    // Rows
+    for row in &result.rows {
+        let earnings = match row.earnings_cents {
+            Some(c) => format!("${}.{:02}", c / 100, c % 100),
+            None => "\u{2014}".to_string(),
+        };
+        out.push_str(&format!(
+            "  {:<gw$}  {:>10}  {:>7}  {:>10}\n",
+            row.group,
+            format_duration_human(row.total_secs),
+            row.entry_count,
+            earnings,
+            gw = group_width,
+        ));
+    }
+
+    // Footer
+    out.push_str(&format!(
+        "  {:<gw$}  {:>10}  {:>7}\n",
+        "Total",
+        format_duration_human(result.unique_total_secs),
+        result.unique_entry_count,
+        gw = group_width,
+    ));
+
+    out
 }
 
 /// Renders rows as a Markdown table with deduplicated totals.
