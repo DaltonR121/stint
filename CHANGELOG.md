@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Phase 4 — Zero-Config & Daily Use
+- `.git` auto-discovery: hook detects git repos and creates projects automatically
+- `stint project ignore <path>` / `stint project unignore <path>` to suppress auto-discovery
+- `stint summary` for a quick one-line overview of today and this week
+- `stint edit --duration --notes` to modify the most recent entry
+- `stint delete-entry` to delete the most recent entry with confirmation
+- `stint import <file.csv>` for one-time CSV import with auto project creation
+- Config file (`~/.config/stint/config.toml`) for idle threshold, default rate, auto-discovery toggle, default tags
+- Environment variable overrides for hook (`STINT_IDLE_THRESHOLD`, `STINT_NO_DISCOVER`)
+- `ProjectSource` field (manual vs discovered) on projects
+- Schema v3 migration: ignored paths table, project source column
+- RFC 4180-aware CSV parsing for quoted fields
+- Row validation before project creation in import (no orphaned projects)
+- License changed from FSL-1.1-MIT to BSL-1.1
+
 ## [0.1.0] — 2026-03-14
 
 ### Added

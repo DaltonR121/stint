@@ -16,23 +16,27 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 ## Features
 
 ### Available Now
-- **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers transparently
+- **Zero-config auto-tracking** — auto-discovers `.git` repos and tracks time via shell hooks, no manual setup needed
 - **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
 - **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically (recommended)
 - **Multi-shell support** — bash, zsh, and fish via `stint shell <type>` (advanced/manual hook installation)
 - **Multi-terminal handling** — merge mode keeps one timer per project across terminals
-- **Idle detection** — auto-pause after 5 minutes of inactivity, resumes on next prompt
-- **Project management** — register projects with paths, tags, and hourly rates; archive and delete
-- **Rich reporting** — grouped by project or tag, with CSV/JSON/Markdown export
-- **Retroactive entries** — `stint add 2h30m --date yesterday --notes "..."` with human-friendly duration and date parsing
+- **Idle detection** — configurable auto-pause (default 5 minutes), resumes on next prompt
+- **Project management** — register projects with paths, tags, and hourly rates; archive, delete, ignore
+- **Rich reporting** — grouped by project or tag, with table/CSV/JSON/Markdown export and earnings calculation
+- **Quick summary** — `stint summary` for a one-line overview of today and this week
+- **Entry editing** — `stint edit` and `stint delete-entry` to fix the most recent entry
+- **CSV import** — `stint import <file.csv>` for one-time migration from Toggl, Clockify, or any tracker
 - **TUI dashboard** — `stint dashboard` with live timer, today's entries, and weekly project totals
+- **Configurable** — `~/.config/stint/config.toml` for idle threshold, default rate, default tags, and auto-discovery toggle
 - **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
-- **Project auto-discovery** — automatically detect unregistered projects from `.git` repos or `.stint.toml` markers (no manual `project add` needed)
-- **Invoicing** — `stint invoice <project>` with hourly rate support
-- **Import/export** — migrate from Watson, Toggl, or generic CSV
-- **Optional cloud sync** — self-hostable web dashboard with team features (future)
+- **Invoicing** — `stint invoice <project>` to generate invoices directly from tracked time
+- **VS Code & Neovim extensions** — see your current project and timer in the editor status bar
+- **Local API** — HTTP API on localhost for editor plugins and custom integrations
+- **Apt repository** — `sudo apt install stint` for one-command installation and upgrades
+- **Optional cloud sync** — self-hostable web dashboard with team features
 
 ## Install
 
@@ -73,16 +77,16 @@ sudo cp target/release/stint /usr/local/bin/
 ## Quick Start
 
 ```sh
-# 1. Register a project
-stint project add my-app --path ~/Projects/my-app --tags client,frontend
-
-# 2. Set up auto-tracking (one-time)
+# 1. Set up auto-tracking (one-time)
 stint init bash    # or: stint init zsh / stint init fish
 
-# 3. Restart your shell, then just work normally.
-#    Navigate to your project directory — tracking starts automatically.
+# 2. Restart your shell, then just work normally.
+#    Navigate to any git repo — tracking starts automatically.
 
-# View your time
+# Quick overview of your time
+stint summary
+
+# Detailed views
 stint status
 stint log --from "last monday"
 stint report --group-by project
@@ -90,6 +94,14 @@ stint report --format csv > timesheet.csv
 
 # Interactive dashboard
 stint dashboard
+```
+
+### Registering Projects Manually
+
+Auto-discovery handles most git repos, but you can register projects explicitly for custom names, tags, or hourly rates:
+
+```sh
+stint project add my-app --path ~/Projects/my-app --tags client,frontend --rate 150
 ```
 
 ### Manual Tracking
@@ -104,14 +116,46 @@ stint stop
 stint add my-app 2h30m --date yesterday --notes "Forgot to track"
 ```
 
+### Importing Existing Data
+
+Migrate from another time tracker with a CSV export:
+
+```sh
+stint import timesheet.csv
+```
+
+The CSV must have `project` and `start` columns. Optional: `end`, `duration_secs`, `notes`.
+
+## Configuration
+
+Stint reads optional configuration from `~/.config/stint/config.toml`:
+
+```toml
+# Idle detection threshold in seconds (default: 300 = 5 minutes)
+idle_threshold = 300
+
+# Default hourly rate in cents for auto-discovered projects (e.g., 15000 = $150/hr)
+# default_rate = 15000
+
+# Enable/disable .git auto-discovery (default: true)
+auto_discover = true
+
+# Default tags applied to auto-discovered projects
+# default_tags = "rust, cli"
+```
+
+Environment variable overrides for the hook (no file I/O):
+- `STINT_IDLE_THRESHOLD=600` — override idle threshold (seconds)
+- `STINT_NO_DISCOVER=1` — disable auto-discovery
+
 ## How It Works
 
 Stint installs a shell hook that fires on every prompt render. The hook calls a fast-path subcommand (`stint _hook`) that:
 
-1. Checks your current directory against registered project paths
+1. Checks your current directory against registered project paths and `.git` repos
 2. Compares the detected project to the last-known context for your shell session
 3. Starts, stops, or switches timers as needed
-4. Detects idle gaps (>5 min) and trims them from tracked time
+4. Detects idle gaps and trims them from tracked time
 
 The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
 
@@ -131,8 +175,10 @@ All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant
 | 1 — Core CLI | Manual time tracking, reporting, export | Done |
 | 2 — Auto-Tracking | Shell hooks, idle detection, multi-terminal | Done |
 | 3 — TUI + v0.1.0 | Interactive dashboard, first public release | Done |
-| **4 — Integrations** | Toggl/Clockify sync, editor plugins, local API | **Up Next** |
-| 5 — Cloud + Web | Optional hosted sync, web dashboard, billing | Planned |
+| 4 — Zero-Config | Auto-discovery, config, import, entry editing | Done |
+| **4.5 — Invoicing** | Invoice generation from tracked time | **Up Next** |
+| 5 — Local API + Plugins | HTTP API, VS Code/Neovim extensions, apt repo | Planned |
+| 6 — Cloud + Web | Optional hosted sync, web dashboard, billing | Planned |
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
