@@ -29,7 +29,7 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 - **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
-- **Project detection** — auto-detect from git repos or `.stint.toml` config files
+- **Project auto-discovery** — automatically detect unregistered projects from `.git` repos or `.stint.toml` markers (no manual `project add` needed)
 - **Invoicing** — `stint invoice <project>` with hourly rate support
 - **TUI dashboard** — interactive terminal UI with calendar heatmaps and live timers
 - **Import/export** — migrate from Watson, Toggl, or generic CSV
