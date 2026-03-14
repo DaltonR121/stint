@@ -5,9 +5,9 @@
 [![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange)]()
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
 
-> **This project is in early development.** The CLI is functional for manual time tracking and reporting, but auto-tracking (shell hooks) is not yet implemented. There is no published binary or crate yet — build from source to try it out.
+> **This project is in early development.** The CLI is fully functional for manual and automatic time tracking, but there is no published binary or crate yet — build from source to try it out.
 
-Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the terminal — it stops. No buttons to click, no browser tabs to manage.
+Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the last terminal — it stops. No buttons to click, no browser tabs to manage.
 
 ## Why Stint?
 
@@ -18,20 +18,20 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 ## Features
 
 ### Available Now
+- **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers transparently
 - **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
+- **Multi-shell support** — bash, zsh, and fish hook scripts via `stint shell <type>`
+- **Multi-terminal handling** — merge mode keeps one timer per project across terminals
+- **Idle detection** — auto-pause after 5 minutes of inactivity, resumes on next prompt
 - **Project management** — register projects with paths, tags, and hourly rates; archive and delete
 - **Rich reporting** — grouped by project or tag, with CSV/JSON/Markdown export
 - **Retroactive entries** — `stint add 2h30m --date yesterday --notes "..."` with human-friendly duration and date parsing
 - **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
-- **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers
-- **Project detection** — auto-detect from git repos or `.stint.toml` config files
+- **Project auto-discovery** — automatically detect unregistered projects from `.git` repos or `.stint.toml` markers (no manual `project add` needed)
 - **Invoicing** — `stint invoice <project>` with hourly rate support
 - **TUI dashboard** — interactive terminal UI with calendar heatmaps and live timers
-- **Multi-shell support** — bash, zsh, fish, with tmux integration
-- **Multi-terminal handling** — merge or parallel modes for concurrent sessions
-- **Idle detection** — auto-pause after configurable inactivity
 - **Import/export** — migrate from Watson, Toggl, or generic CSV
 - **Optional cloud sync** — self-hostable web dashboard with team features (future)
 
@@ -59,9 +59,9 @@ stint report --group-by project
 stint report --format csv > timesheet.csv
 ```
 
-### Auto-Tracking (Phase 2 — not yet available)
+### Auto-Tracking
 
-> Auto-tracking via shell hooks is planned for Phase 2. The commands below show what the experience will look like once implemented.
+Add one line to your shell config and tracking happens automatically:
 
 ```sh
 # Bash (~/.bashrc)
@@ -74,23 +74,22 @@ eval "$(stint shell zsh)"
 stint shell fish | source
 ```
 
-Navigate to a project directory and Stint starts tracking. Switch directories — it switches. Close the terminal — it stops. No manual intervention.
+Navigate to a registered project directory and Stint starts tracking. Switch directories — it switches. In merge mode, the timer stops when the last terminal tracking that project closes or leaves the directory. No manual intervention.
+
+The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
 
 ## How It Works
 
 Stint installs a shell hook that fires on every prompt render. The hook calls a fast-path subcommand (`stint _hook`) that:
 
 1. Checks your current directory against registered project paths
-2. Looks for `.stint.toml` or `.git` markers up the directory tree
-3. Compares the detected project to the last-known context for your shell session
-4. Starts, stops, or switches timers as needed
-
-The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
+2. Compares the detected project to the last-known context for your shell session
+3. Starts, stops, or switches timers as needed
+4. Detects idle gaps (>5 min) and trims them from tracked time
 
 ### Multi-Terminal Behavior
 
-- **Merge mode** (default): One timer per project, regardless of how many terminals are open
-- **Parallel mode**: Each terminal session gets its own time entry
+- **Merge mode** (default): One timer per project, regardless of how many terminals are open. The timer only stops when the last terminal tracking that project closes or leaves the directory.
 
 ### Data Storage
 
@@ -102,8 +101,8 @@ All data lives locally in `~/.local/share/stint/stint.db` (SQLite, XDG-compliant
 |-------|-----------|--------|
 | 0 — Foundation | Project scaffolding, data model, CI | Done |
 | 1 — Core CLI | Manual time tracking, reporting, export | Done |
-| **2 — Auto-Tracking** | Shell hooks, idle detection, multi-terminal | **Up Next** |
-| 3 — TUI + v0.1.0 | Interactive dashboard, first public release | Planned |
+| 2 — Auto-Tracking | Shell hooks, idle detection, multi-terminal | Done |
+| **3 — TUI + v0.1.0** | Interactive dashboard, first public release | **Up Next** |
 | 4 — Integrations | Toggl/Clockify sync, editor plugins, local API | Planned |
 | 5 — Cloud + Web | Optional hosted sync, web dashboard, billing | Planned |
 
