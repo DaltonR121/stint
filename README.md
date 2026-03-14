@@ -20,11 +20,19 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 
 ### One-liner (Linux & macOS)
 
+The install script detects your OS and package manager — on Debian/Ubuntu it sets up the apt repository for future upgrades, on other systems it downloads the binary from GitHub Releases.
+
 ```sh
 curl -fsSL https://daltonr121.github.io/stint/install.sh | sudo sh
 ```
 
-On Debian/Ubuntu this automatically sets up the apt repository for future upgrades via `sudo apt upgrade`.
+To inspect the script before running:
+
+```sh
+curl -fsSL https://daltonr121.github.io/stint/install.sh -o install.sh
+less install.sh
+sudo sh install.sh
+```
 
 ### Other Methods
 
