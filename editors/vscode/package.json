@@ -12,8 +12,12 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
@@ -43,6 +47,7 @@
     "package": "pnpm exec vsce package --no-dependencies"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
     "typescript": "^5.0.0"
