@@ -36,6 +36,11 @@ BSL-1.1 — free to use and self-host, commercial hosting rights reserved to Mos
 - No telemetry, no analytics, no phone-home behavior
 
 ## Current Phase
-Phase 4 — Integrations (Toggl/Clockify sync, editor plugins, local API)
+Phase 4.5 — Invoicing (invoice generation from tracked time)
 
-Phases 0 (Foundation), 1 (Core CLI), 2 (Auto-Tracking), and 3 (TUI + v0.1.0) are complete.
+Phases 0 (Foundation), 1 (Core CLI), 2 (Auto-Tracking), 3 (TUI + v0.1.0), and 4 (Zero-Config & Daily Use) are complete.
+
+## Revised Roadmap
+- Phase 4.5: Invoicing
+- Phase 5: Local API + Editor Plugins + Apt Repository
+- Phase 6: Cloud + Web Dashboard
