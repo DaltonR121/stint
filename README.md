@@ -59,9 +59,9 @@ stint report --group-by project
 stint report --format csv > timesheet.csv
 ```
 
-### Auto-Tracking (the magic)
+### Auto-Tracking (Phase 2 — not yet available)
 
-Add one line to your shell config:
+> Auto-tracking via shell hooks is planned for Phase 2. The commands below show what the experience will look like once implemented.
 
 ```sh
 # Bash (~/.bashrc)
@@ -74,18 +74,7 @@ eval "$(stint shell zsh)"
 stint shell fish | source
 ```
 
-That's it. Navigate to a project directory and Stint starts tracking. Switch directories — it switches. Close the terminal — it stops. No manual intervention.
-
-### Configuration
-
-```sh
-# Global settings
-stint config set auto_track true
-stint config set idle_timeout 15m
-
-# Per-project overrides (creates .stint.toml in project root)
-stint config set --project my-app hourly_rate 150
-```
+Navigate to a project directory and Stint starts tracking. Switch directories — it switches. Close the terminal — it stops. No manual intervention.
 
 ## How It Works
 
