@@ -219,7 +219,8 @@ pub fn handle_hook_exit(storage: &impl Storage, pid: u32) -> Result<(), StintErr
 
 /// Reaps stale sessions whose last heartbeat is older than the threshold.
 ///
-/// Stops any running entries at the session's last heartbeat time.
+/// Ends all stale sessions first, then stops hook entries only for projects
+/// with no remaining active sessions (preserving merge mode invariant).
 /// Returns the number of sessions reaped.
 pub fn reap_stale_sessions(
     storage: &impl Storage,
@@ -229,24 +230,55 @@ pub fn reap_stale_sessions(
     let stale = storage.get_stale_sessions(threshold)?;
     let count = stale.len();
 
+    if count == 0 {
+        return Ok(0);
+    }
+
+    // Group by project_id, tracking the max last_heartbeat per project
+    let mut project_max_heartbeat: std::collections::HashMap<
+        String,
+        (crate::models::types::ProjectId, OffsetDateTime),
+    > = std::collections::HashMap::new();
+
+    // End all stale sessions first
     for session in &stale {
-        // Stop any running entry at last heartbeat time
         if let Some(ref project_id) = session.current_project_id {
-            stop_entry_for_project(storage, project_id, session.last_heartbeat)?;
+            let key = project_id.as_str().to_owned();
+            project_max_heartbeat
+                .entry(key)
+                .and_modify(|(_, max_hb)| {
+                    if session.last_heartbeat > *max_hb {
+                        *max_hb = session.last_heartbeat;
+                    }
+                })
+                .or_insert((project_id.clone(), session.last_heartbeat));
         }
         storage.end_session(&session.id, session.last_heartbeat)?;
+    }
+
+    // Stop entries only for projects with no remaining active sessions
+    for (project_id, max_heartbeat) in project_max_heartbeat.values() {
+        // Use a dummy session ID that won't match anything to count all active sessions
+        let dummy_id = SessionId::new();
+        let active_count = storage.count_active_sessions_for_project(project_id, &dummy_id)?;
+        if active_count == 0 {
+            stop_entry_for_project(storage, project_id, *max_heartbeat)?;
+        }
     }
 
     Ok(count)
 }
 
-/// Stops the running entry for a project, setting end time and computing duration.
+/// Stops the running hook-sourced entry for a project.
+///
+/// Only stops entries with `source: Hook`. Manual entries are left untouched
+/// so that `stint start`/`stint stop` are not interfered with by the hook.
 fn stop_entry_for_project(
     storage: &impl Storage,
     project_id: &crate::models::types::ProjectId,
     end_time: OffsetDateTime,
 ) -> Result<(), StintError> {
-    if let Some(mut entry) = storage.get_running_entry(project_id)? {
+    if let Some(mut entry) = storage.get_running_hook_entry(project_id)? {
         entry.end = Some(end_time);
         entry.duration_secs = Some((end_time - entry.start).whole_seconds());
         entry.updated_at = end_time;

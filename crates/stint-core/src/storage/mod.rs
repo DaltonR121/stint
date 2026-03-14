@@ -51,6 +51,12 @@ pub trait Storage {
     /// Finds the currently running entry for a specific project.
     fn get_running_entry(&self, project_id: &ProjectId) -> Result<Option<TimeEntry>, StorageError>;
 
+    /// Finds the currently running hook-sourced entry for a specific project.
+    fn get_running_hook_entry(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<Option<TimeEntry>, StorageError>;
+
     /// Finds any currently running entry across all projects.
     fn get_any_running_entry(&self) -> Result<Option<TimeEntry>, StorageError>;
 

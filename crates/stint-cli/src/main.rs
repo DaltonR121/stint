@@ -634,10 +634,16 @@ fn cmd_project_delete(name: String, force: bool) {
 }
 
 /// Handles the `_hook` command (called by shell hooks).
+///
+/// Must never call process::exit or print to stdout/stderr — the hook
+/// must be invisible to the user's shell.
 fn cmd_hook(cwd: PathBuf, pid: u32, shell: Option<String>, exit: bool) {
-    let storage = open_storage();
+    let path = SqliteStorage::default_path();
+    let storage = match SqliteStorage::open(&path) {
+        Ok(s) => s,
+        Err(_) => return, // Silently bail — don't interfere with the shell
+    };
     if exit {
-        // Silently ignore errors — the hook must never interfere with the shell
         let _ = hook::handle_hook_exit(&storage, pid);
     } else {
         let _ = hook::handle_hook(&storage, pid, &cwd, shell.as_deref());

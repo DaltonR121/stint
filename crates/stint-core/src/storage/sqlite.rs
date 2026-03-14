@@ -16,7 +16,7 @@ use super::Storage;
 
 /// Current schema version. Increment when adding migrations.
 #[cfg(test)]
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// SQLite-backed storage for Stint.
 pub struct SqliteStorage {
@@ -81,6 +81,9 @@ impl SqliteStorage {
 
         if current_version < 1 {
             self.migrate_v1()?;
+        }
+        if current_version < 2 {
+            self.migrate_v2()?;
         }
 
         Ok(())
@@ -160,6 +163,21 @@ impl SqliteStorage {
                 ON sessions(pid) WHERE ended_at IS NULL;
 
             INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '1');",
+        )?;
+
+        Ok(())
+    }
+
+    /// Migration v2: indexes for session queries used by shell hooks.
+    fn migrate_v2(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_active_project
+                ON sessions(current_project_id) WHERE ended_at IS NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_sessions_active_heartbeat
+                ON sessions(last_heartbeat) WHERE ended_at IS NULL;
+
+            INSERT OR REPLACE INTO _stint_meta (key, value) VALUES ('schema_version', '2');",
         )?;
 
         Ok(())
@@ -579,6 +597,25 @@ impl Storage for SqliteStorage {
             .conn
             .query_row(
                 "SELECT * FROM entries WHERE project_id = ?1 AND end_time IS NULL LIMIT 1",
+                params![project_id.as_str()],
+                |row| self.entry_from_row(row),
+            )
+            .optional()?;
+
+        match entry {
+            Some(e) => Ok(Some(self.hydrate_entry(e)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn get_running_hook_entry(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<Option<TimeEntry>, StorageError> {
+        let entry = self
+            .conn
+            .query_row(
+                "SELECT * FROM entries WHERE project_id = ?1 AND end_time IS NULL AND source = 'hook' LIMIT 1",
                 params![project_id.as_str()],
                 |row| self.entry_from_row(row),
             )
