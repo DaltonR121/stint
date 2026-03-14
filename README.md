@@ -74,7 +74,7 @@ eval "$(stint shell zsh)"
 stint shell fish | source
 ```
 
-Navigate to a registered project directory and Stint starts tracking. Switch directories — it switches. Close the terminal — it stops. No manual intervention.
+Navigate to a registered project directory and Stint starts tracking. Switch directories — it switches. In merge mode, the timer stops when the last terminal tracking that project closes or leaves the directory. No manual intervention.
 
 The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
 
