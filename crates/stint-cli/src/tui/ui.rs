@@ -80,6 +80,7 @@ fn render_today(frame: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = app
         .today_entries
         .iter()
+        .skip(app.today_scroll)
         .enumerate()
         .map(|(i, (entry, project))| {
             let duration = if entry.is_running() {
@@ -143,6 +144,7 @@ fn render_week(frame: &mut Frame, app: &App, area: Rect) {
     let rows: Vec<Row> = app
         .week_totals
         .iter()
+        .skip(app.week_scroll)
         .map(|(name, secs)| {
             let bar_len = if max_secs > 0 {
                 (*secs as usize * bar_width) / max_secs as usize

@@ -17,19 +17,36 @@ use stint_core::storage::sqlite::SqliteStorage;
 
 use self::app::App;
 
+/// RAII guard that restores terminal state on drop.
+struct TerminalGuard;
+
+impl TerminalGuard {
+    /// Enters raw mode and alternate screen, returning the guard.
+    fn init() -> Result<Self, Box<dyn std::error::Error>> {
+        enable_raw_mode()?;
+        io::stdout().execute(EnterAlternateScreen)?;
+        Ok(Self)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = io::stdout().execute(LeaveAlternateScreen);
+    }
+}
+
 /// Runs the interactive dashboard.
 ///
 /// Opens the database, enters the alternate screen, and runs the event loop
-/// until the user quits. Restores terminal state on exit (including panics).
+/// until the user quits. Terminal state is restored on exit, error, or panic
+/// via the TerminalGuard RAII guard.
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let path = SqliteStorage::default_path();
     let storage = SqliteStorage::open(&path)?;
 
-    // Set up terminal
-    enable_raw_mode()?;
-    io::stdout().execute(EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::new(backend)?;
+    // Set up terminal — guard restores state on any exit path
+    let _guard = TerminalGuard::init()?;
 
     // Install panic hook to restore terminal on crash
     let original_hook = std::panic::take_hook();
@@ -39,6 +56,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         original_hook(panic_info);
     }));
 
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend)?;
     let mut app = App::new(storage);
 
     // Event loop
@@ -51,10 +70,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 match (key.code, key.modifiers) {
                     (KeyCode::Char('q'), _) | (KeyCode::Esc, _) => app.should_quit = true,
                     (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.should_quit = true,
-                    (KeyCode::Tab, _) => {
-                        app.selected_panel = app.selected_panel.next();
-                    }
-                    (KeyCode::BackTab, _) => {
+                    (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
                         app.selected_panel = app.selected_panel.next();
                     }
                     (KeyCode::Up, _) => app.scroll_up(),
@@ -72,9 +88,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Restore terminal
-    disable_raw_mode()?;
-    io::stdout().execute(LeaveAlternateScreen)?;
-
+    // _guard drops here, restoring terminal state
     Ok(())
 }

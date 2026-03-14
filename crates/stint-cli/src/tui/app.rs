@@ -64,7 +64,7 @@ impl App {
 
     /// Refreshes all dashboard data from the database.
     pub fn refresh(&mut self) {
-        let now = OffsetDateTime::now_utc();
+        let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
 
         // Running timer
         self.running_timer = self.service.get_status().unwrap_or(None);
