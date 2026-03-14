@@ -175,6 +175,12 @@ enum Commands {
         shell: String,
     },
 
+    /// Add the shell hook to your shell config file.
+    Init {
+        /// Shell type: bash, zsh, or fish.
+        shell: String,
+    },
+
     /// Internal: called by shell hooks on every prompt render.
     #[command(name = "_hook", hide = true)]
     Hook {
@@ -699,6 +705,71 @@ end
     print!("{script}");
 }
 
+/// Handles the `init` command — appends the shell hook to the user's config file.
+fn cmd_init(shell: String) {
+    let (config_path, eval_line) = match shell.to_lowercase().as_str() {
+        "bash" => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            (home.join(".bashrc"), "eval \"$(stint shell bash)\"")
+        }
+        "zsh" => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            (home.join(".zshrc"), "eval \"$(stint shell zsh)\"")
+        }
+        "fish" => {
+            let config = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config"));
+            (
+                config.join("fish").join("config.fish"),
+                "stint shell fish | source",
+            )
+        }
+        _ => {
+            eprintln!("error: unsupported shell '{shell}' (use bash, zsh, or fish)");
+            process::exit(1);
+        }
+    };
+
+    // Check if already installed
+    if config_path.exists() {
+        let contents = match std::fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("error: failed to read {}: {e}", config_path.display());
+                process::exit(1);
+            }
+        };
+        if contents.contains(eval_line) {
+            println!("Stint hook already installed in {}", config_path.display());
+            return;
+        }
+    }
+
+    // Append the eval line
+    let mut file = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&config_path)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: failed to open {}: {e}", config_path.display());
+            process::exit(1);
+        }
+    };
+
+    use std::io::Write as _;
+    if let Err(e) = writeln!(file, "\n# Stint auto-tracking hook\n{eval_line}") {
+        eprintln!("error: failed to write to {}: {e}", config_path.display());
+        process::exit(1);
+    }
+
+    println!("Installed Stint hook in {}", config_path.display());
+    println!(
+        "Restart your shell or run: source {}",
+        config_path.display()
+    );
+}
+
 /// Entry point.
 fn main() {
     let cli = Cli::parse();
@@ -745,6 +816,7 @@ fn main() {
             ProjectCommands::Delete { name, force } => cmd_project_delete(name, force),
         },
         Commands::Shell { shell } => cmd_shell(shell),
+        Commands::Init { shell } => cmd_init(shell),
         Commands::Hook {
             cwd,
             pid,
