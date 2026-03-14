@@ -30,4 +30,5 @@ crossterm = "0.28"
 dirs = "6"
 ratatui = "0.29"
 stint-core = { path = "../stint-core" }
+stint-server = { path = "../stint-server" }
 time = { version = "0.3", features = ["local-offset", "formatting"] }

@@ -96,3 +96,71 @@ jobs:
         with:
           generate_release_notes: true
           files: artifacts/**/*
+
+  publish-apt:
+    name: Publish to apt repository
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stint-x86_64-unknown-linux-gnu
+          path: incoming/
+
+      - name: Import GPG key
+        run: |
+          if [ -z "$APT_GPG_PRIVATE_KEY" ]; then
+            echo "::error::APT_GPG_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+
+      - name: Install apt tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils dpkg-dev
+
+      - name: Update apt repository
+        run: |
+          mkdir -p pool/main/s/stint
+          cp incoming/*.deb pool/main/s/stint/
+
+          mkdir -p dists/stable/main/binary-amd64
+          dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-amd64/Packages
+          gzip -kf dists/stable/main/binary-amd64/Packages
+
+          cd dists/stable
+          cat > apt-release.conf <<CONF
+          APT::FTPArchive::Release::Origin "Mosaic Ridge LLC";
+          APT::FTPArchive::Release::Label "Stint";
+          APT::FTPArchive::Release::Suite "stable";
+          APT::FTPArchive::Release::Codename "stable";
+          APT::FTPArchive::Release::Components "main";
+          APT::FTPArchive::Release::Architectures "amd64";
+          CONF
+          apt-ftparchive -c apt-release.conf release . > Release
+          rm apt-release.conf
+          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
+          gpg --batch --yes --clearsign -o InRelease Release
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          rm -rf incoming/
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update apt repo for ${{ github.ref_name }}"
+          git fetch origin gh-pages
+          git rebase origin/gh-pages
+          git push origin HEAD:gh-pages --force-with-lease
