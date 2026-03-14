@@ -1,6 +1,6 @@
 //! API response types and handler functions.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -9,6 +9,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use tokio::sync::Mutex;
 
 use stint_core::models::entry::EntryFilter;
 use stint_core::service::StintService;
@@ -103,7 +104,7 @@ pub async fn health() -> impl IntoResponse {
 
 /// GET /api/status
 pub async fn status(State(state): State<AppState>) -> impl IntoResponse {
-    let service = state.lock().unwrap();
+    let service = state.lock().await;
     match service.get_status() {
         Ok(Some((entry, project))) => {
             let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();
@@ -133,7 +134,7 @@ pub async fn entries(
     State(state): State<AppState>,
     Query(query): Query<EntriesQuery>,
 ) -> impl IntoResponse {
-    let service = state.lock().unwrap();
+    let service = state.lock().await;
 
     let mut filter = EntryFilter::default();
 
@@ -147,14 +148,28 @@ pub async fn entries(
     }
 
     if let Some(ref from) = query.from {
-        if let Ok(dt) = OffsetDateTime::parse(from, &Rfc3339) {
-            filter.from = Some(dt);
+        match OffsetDateTime::parse(from, &Rfc3339) {
+            Ok(dt) => filter.from = Some(dt),
+            Err(_) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("invalid 'from' date: '{from}' (expected RFC 3339)"),
+                )
+                .into_response()
+            }
         }
     }
 
     if let Some(ref to) = query.to {
-        if let Ok(dt) = OffsetDateTime::parse(to, &Rfc3339) {
-            filter.to = Some(dt);
+        match OffsetDateTime::parse(to, &Rfc3339) {
+            Ok(dt) => filter.to = Some(dt),
+            Err(_) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("invalid 'to' date: '{to}' (expected RFC 3339)"),
+                )
+                .into_response()
+            }
         }
     }
 
@@ -192,7 +207,7 @@ pub async fn entries(
 
 /// GET /api/projects
 pub async fn projects(State(state): State<AppState>) -> impl IntoResponse {
-    let service = state.lock().unwrap();
+    let service = state.lock().await;
     let result = service.storage().list_projects(None);
     drop(service);
     match result {
@@ -227,7 +242,7 @@ pub async fn start(
     State(state): State<AppState>,
     Json(body): Json<StartRequest>,
 ) -> impl IntoResponse {
-    let service = state.lock().unwrap();
+    let service = state.lock().await;
     match service.start_timer(&body.project) {
         Ok((entry, project)) => {
             let response = EntryResponse {
@@ -237,8 +252,8 @@ pub async fn start(
                 end: None,
                 duration_secs: Some(0),
                 source: entry.source.as_str().to_string(),
-                notes: None,
-                tags: vec![],
+                notes: entry.notes,
+                tags: entry.tags,
                 running: true,
             };
             (StatusCode::CREATED, Json(response)).into_response()
@@ -249,7 +264,7 @@ pub async fn start(
 
 /// POST /api/stop
 pub async fn stop(State(state): State<AppState>) -> impl IntoResponse {
-    let service = state.lock().unwrap();
+    let service = state.lock().await;
     match service.stop_timer() {
         Ok((entry, project)) => {
             let response = EntryResponse {

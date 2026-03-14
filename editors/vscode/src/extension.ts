@@ -55,9 +55,15 @@ function tryStartServer(): void {
     const stintPath = config.get<string>('stintPath', 'stint');
 
     try {
-        const port = new URL(
-            config.get<string>('apiUrl', 'http://127.0.0.1:7653')
-        ).port || '7653';
+        let port = '7653';
+        try {
+            const url = new URL(config.get<string>('apiUrl', 'http://127.0.0.1:7653'));
+            if (url.port) {
+                port = url.port;
+            }
+        } catch {
+            // Invalid URL in config — use default port
+        }
 
         serverProcess = spawn(stintPath, ['serve', '--port', port], {
             detached: true,
@@ -84,7 +90,12 @@ async function updateStatus(): Promise<void> {
     const apiUrl = config.get<string>('apiUrl', 'http://127.0.0.1:7653');
 
     try {
-        const response = await fetch(`${apiUrl}/api/status`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch(`${apiUrl}/api/status`, {
+            signal: controller.signal,
+        });
+        clearTimeout(timeout);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
