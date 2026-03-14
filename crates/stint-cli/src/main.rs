@@ -1,11 +1,17 @@
 //! Entry point for the Stint CLI.
 
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Parser, Subcommand};
+use stint_core::dateparse::parse_date;
+use stint_core::duration::{format_duration_human, parse_duration};
+use stint_core::models::entry::EntryFilter;
 use stint_core::models::project::{Project, ProjectStatus};
 use stint_core::models::types::ProjectId;
+use stint_core::report::{format_report, generate_report, GroupBy, ReportFormat};
+use stint_core::service::StintService;
 use stint_core::storage::sqlite::SqliteStorage;
 use stint_core::storage::Storage;
 use time::OffsetDateTime;
@@ -53,6 +59,16 @@ fn parse_cents(s: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("invalid rate: '{s}'"))
 }
 
+/// Parses a duration string for clap.
+fn parse_duration_arg(s: &str) -> Result<i64, String> {
+    parse_duration(s)
+}
+
+/// Returns the current local time, falling back to UTC if local time is unavailable.
+fn now_local() -> OffsetDateTime {
+    OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc())
+}
+
 /// Terminal-native project time tracker.
 #[derive(Parser)]
 #[command(name = "stint", version, about)]
@@ -64,6 +80,82 @@ struct Cli {
 /// Top-level commands.
 #[derive(Subcommand)]
 enum Commands {
+    /// Start tracking time for a project.
+    Start {
+        /// Project name.
+        project: String,
+    },
+
+    /// Stop the currently running timer.
+    Stop,
+
+    /// Show what's currently being tracked.
+    Status,
+
+    /// Add time retroactively.
+    Add {
+        /// Project name.
+        project: String,
+
+        /// Duration (e.g., "2h30m", "45m", "1h").
+        #[arg(value_parser = parse_duration_arg)]
+        duration: i64,
+
+        /// Date for the entry (e.g., "today", "yesterday", "2026-01-15").
+        #[arg(short, long)]
+        date: Option<String>,
+
+        /// Notes for the entry.
+        #[arg(short, long)]
+        notes: Option<String>,
+    },
+
+    /// View time entries.
+    Log {
+        /// Start date filter (e.g., "today", "last monday", "2026-01-01").
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End date filter.
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Filter by project name.
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Filter by tag (can be specified multiple times).
+        #[arg(short, long)]
+        tag: Vec<String>,
+    },
+
+    /// Generate grouped time reports.
+    Report {
+        /// Group results by "project" or "tag".
+        #[arg(long, default_value = "project")]
+        group_by: String,
+
+        /// Output format: "markdown", "csv", or "json".
+        #[arg(long, default_value = "markdown")]
+        format: String,
+
+        /// Start date filter.
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End date filter.
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Filter by project name.
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Filter by tag (can be specified multiple times).
+        #[arg(short, long)]
+        tag: Vec<String>,
+    },
+
     /// Manage projects.
     Project {
         #[command(subcommand)]
@@ -98,9 +190,38 @@ enum ProjectCommands {
         #[arg(short, long)]
         all: bool,
     },
+
+    /// Archive a project (hide from default listings).
+    Archive {
+        /// Project name.
+        name: String,
+    },
+
+    /// Delete a project and all its time entries.
+    Delete {
+        /// Project name.
+        name: String,
+
+        /// Skip confirmation prompt.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
-/// Opens the database, exiting on failure.
+/// Opens the database and creates a service, exiting on failure.
+fn open_service() -> StintService<SqliteStorage> {
+    let path = SqliteStorage::default_path();
+    let storage = match SqliteStorage::open(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to open database at {}: {e}", path.display());
+            process::exit(1);
+        }
+    };
+    StintService::new(storage)
+}
+
+/// Opens raw storage for operations that don't need the service layer.
 fn open_storage() -> SqliteStorage {
     let path = SqliteStorage::default_path();
     match SqliteStorage::open(&path) {
@@ -112,8 +233,211 @@ fn open_storage() -> SqliteStorage {
     }
 }
 
+/// Builds an EntryFilter from common CLI args.
+fn build_filter(
+    service: &StintService<SqliteStorage>,
+    from: &Option<String>,
+    to: &Option<String>,
+    project: &Option<String>,
+    tags: &[String],
+) -> EntryFilter {
+    let now = now_local();
+
+    let from_dt = from.as_ref().map(|s| match parse_date(s, now) {
+        Ok(dt) => dt,
+        Err(e) => {
+            eprintln!("error: --from: {e}");
+            process::exit(1);
+        }
+    });
+
+    let to_dt = to.as_ref().map(|s| match parse_date(s, now) {
+        Ok(dt) => dt + time::Duration::days(1), // inclusive end date
+        Err(e) => {
+            eprintln!("error: --to: {e}");
+            process::exit(1);
+        }
+    });
+
+    let project_id = project
+        .as_ref()
+        .map(|name| match service.resolve_project_id(name) {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("error: {e}");
+                process::exit(1);
+            }
+        });
+
+    EntryFilter {
+        project_id,
+        from: from_dt,
+        to: to_dt,
+        tags: tags.to_vec(),
+        source: None,
+    }
+}
+
+// --- Command handlers ---
+
+/// Handles the `start` command.
+fn cmd_start(project: String) {
+    let service = open_service();
+    match service.start_timer(&project) {
+        Ok((_, proj)) => println!("Started timer for '{}'", proj.name),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `stop` command.
+fn cmd_stop() {
+    let service = open_service();
+    match service.stop_timer() {
+        Ok((entry, project)) => {
+            let duration = entry.duration_secs.unwrap_or(0);
+            println!(
+                "Stopped '{}' after {}",
+                project.name,
+                format_duration_human(duration)
+            );
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `status` command.
+fn cmd_status() {
+    let service = open_service();
+    match service.get_status() {
+        Ok(Some((entry, project))) => {
+            let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();
+            println!(
+                "Tracking '{}' for {}",
+                project.name,
+                format_duration_human(elapsed)
+            );
+        }
+        Ok(None) => println!("No timer running."),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `add` command.
+fn cmd_add(project: String, duration_secs: i64, date: Option<String>, notes: Option<String>) {
+    let now = now_local();
+    let date_dt = date.as_ref().map(|s| match parse_date(s, now) {
+        Ok(dt) => dt,
+        Err(e) => {
+            eprintln!("error: --date: {e}");
+            process::exit(1);
+        }
+    });
+
+    let service = open_service();
+    match service.add_time(&project, duration_secs, date_dt, notes.as_deref()) {
+        Ok((_, proj)) => {
+            let date_str = date.as_deref().unwrap_or("today");
+            println!(
+                "Added {} to '{}' ({})",
+                format_duration_human(duration_secs),
+                proj.name,
+                date_str
+            );
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `log` command.
+fn cmd_log(from: Option<String>, to: Option<String>, project: Option<String>, tags: Vec<String>) {
+    let service = open_service();
+    let filter = build_filter(&service, &from, &to, &project, &tags);
+
+    let entries = match service.get_entries(&filter) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    if entries.is_empty() {
+        println!("No entries found.");
+        return;
+    }
+
+    for (entry, proj) in &entries {
+        let date = entry.start.date();
+        let duration = entry.computed_duration_secs().unwrap_or(0);
+        let source = entry.source.as_str();
+        let notes = entry.notes.as_deref().unwrap_or("");
+        let running = if entry.is_running() { " (running)" } else { "" };
+
+        println!(
+            "  {}  {:<16}  {:>8}  {:<7}  {}{}",
+            date,
+            proj.name,
+            format_duration_human(duration),
+            source,
+            notes,
+            running,
+        );
+    }
+}
+
+/// Handles the `report` command.
+fn cmd_report(
+    group_by: String,
+    format: String,
+    from: Option<String>,
+    to: Option<String>,
+    project: Option<String>,
+    tags: Vec<String>,
+) {
+    let group = match GroupBy::from_str_value(&group_by) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+    let fmt = match ReportFormat::from_str_value(&format) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    let service = open_service();
+    let filter = build_filter(&service, &from, &to, &project, &tags);
+
+    let entries = match service.get_entries(&filter) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    let result = generate_report(&entries, &group);
+    print!("{}", format_report(&result, &fmt));
+}
+
 /// Handles the `project add` command.
-fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<i64>) {
+fn cmd_project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<i64>) {
     // Validate path before opening the database
     let paths = match path {
         Some(p) => {
@@ -135,15 +459,13 @@ fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: 
         .map(|t| stint_core::models::tag::parse_tags(&t))
         .unwrap_or_default();
 
-    let hourly_rate_cents = rate;
-
     let now = OffsetDateTime::now_utc();
     let project = Project {
         id: ProjectId::new(),
         name: name.clone(),
         paths,
         tags: parsed_tags,
-        hourly_rate_cents,
+        hourly_rate_cents: rate,
         status: ProjectStatus::Active,
         created_at: now,
         updated_at: now,
@@ -159,7 +481,7 @@ fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: 
 }
 
 /// Handles the `project list` command.
-fn project_list(all: bool) {
+fn cmd_project_list(all: bool) {
     let storage = open_storage();
 
     let status_filter = if all {
@@ -178,11 +500,13 @@ fn project_list(all: bool) {
 
     if projects.is_empty() {
         if !all {
-            // Check if there are archived projects the user isn't seeing
-            let has_archived = storage
-                .list_projects(Some(ProjectStatus::Archived))
-                .map(|p| !p.is_empty())
-                .unwrap_or(false);
+            let has_archived = match storage.list_projects(Some(ProjectStatus::Archived)) {
+                Ok(p) => !p.is_empty(),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    process::exit(1);
+                }
+            };
             if has_archived {
                 println!("No active projects. Use 'stint project list --all' to include archived.");
                 return;
@@ -232,19 +556,94 @@ fn project_list(all: bool) {
     }
 }
 
+/// Handles the `project archive` command.
+fn cmd_project_archive(name: String) {
+    let service = open_service();
+    match service.archive_project(&name) {
+        Ok(project) => println!("Archived project '{}'", project.name),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+/// Handles the `project delete` command.
+fn cmd_project_delete(name: String, force: bool) {
+    if !force {
+        print!("Delete project '{name}' and all its entries? [y/N] ");
+        if let Err(e) = io::stdout().flush() {
+            eprintln!("error: failed to flush stdout: {e}");
+            process::exit(1);
+        }
+
+        let mut input = String::new();
+        match io::stdin().read_line(&mut input) {
+            Ok(0) => {
+                println!("Cancelled.");
+                return;
+            }
+            Err(e) => {
+                eprintln!("error: failed to read input: {e}");
+                process::exit(1);
+            }
+            Ok(_) => {}
+        }
+
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Cancelled.");
+            return;
+        }
+    }
+
+    let service = open_service();
+    match service.delete_project(&name) {
+        Ok(deleted_name) => println!("Deleted project '{deleted_name}'"),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 /// Entry point.
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Start { project } => cmd_start(project),
+        Commands::Stop => cmd_stop(),
+        Commands::Status => cmd_status(),
+        Commands::Add {
+            project,
+            duration,
+            date,
+            notes,
+        } => cmd_add(project, duration, date, notes),
+        Commands::Log {
+            from,
+            to,
+            project,
+            tag,
+        } => cmd_log(from, to, project, tag),
+        Commands::Report {
+            group_by,
+            format,
+            from,
+            to,
+            project,
+            tag,
+        } => cmd_report(group_by, format, from, to, project, tag),
         Commands::Project { command } => match command {
             ProjectCommands::Add {
                 name,
                 path,
                 tags,
                 rate,
-            } => project_add(name, path, tags, rate),
-            ProjectCommands::List { all } => project_list(all),
+            } => cmd_project_add(name, path, tags, rate),
+            ProjectCommands::List { all } => cmd_project_list(all),
+            ProjectCommands::Archive { name } => cmd_project_archive(name),
+            ProjectCommands::Delete { name, force } => cmd_project_delete(name, force),
         },
     }
 }
