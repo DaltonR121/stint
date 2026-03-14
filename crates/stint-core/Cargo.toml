@@ -2,7 +2,7 @@
 name = "stint-core"
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 description = "Core domain logic, data models, and storage traits for Stint"
 readme = "../../README.md"
