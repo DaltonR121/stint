@@ -114,8 +114,7 @@ fn open_storage() -> SqliteStorage {
 
 /// Handles the `project add` command.
 fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: Option<i64>) {
-    let storage = open_storage();
-
+    // Validate path before opening the database
     let paths = match path {
         Some(p) => {
             let resolved = match p.canonicalize() {
@@ -129,6 +128,8 @@ fn project_add(name: String, path: Option<PathBuf>, tags: Option<String>, rate: 
         }
         None => vec![],
     };
+
+    let storage = open_storage();
 
     let parsed_tags = tags
         .map(|t| stint_core::models::tag::parse_tags(&t))
@@ -176,6 +177,17 @@ fn project_list(all: bool) {
     };
 
     if projects.is_empty() {
+        if !all {
+            // Check if there are archived projects the user isn't seeing
+            let has_archived = storage
+                .list_projects(Some(ProjectStatus::Archived))
+                .map(|p| !p.is_empty())
+                .unwrap_or(false);
+            if has_archived {
+                println!("No active projects. Use 'stint project list --all' to include archived.");
+                return;
+            }
+        }
         println!("No projects registered. Use 'stint project add' to create one.");
         return;
     }
@@ -189,7 +201,7 @@ fn project_list(all: bool) {
             .join(", ");
 
         let rate_str = match project.hourly_rate_cents {
-            Some(cents) => format!("${:.2}/hr", cents as f64 / 100.0),
+            Some(cents) => format!("${}.{:02}/hr", cents / 100, cents % 100),
             None => String::new(),
         };
 
