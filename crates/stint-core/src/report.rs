@@ -31,6 +31,8 @@ impl GroupBy {
 /// Output format for reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportFormat {
+    /// Plain-text aligned table for terminal display.
+    Table,
     /// Markdown table.
     Markdown,
     /// Comma-separated values.
@@ -43,11 +45,12 @@ impl ReportFormat {
     /// Parses a format string.
     pub fn from_str_value(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
+            "table" => Ok(Self::Table),
             "markdown" | "md" => Ok(Self::Markdown),
             "csv" => Ok(Self::Csv),
             "json" => Ok(Self::Json),
             _ => Err(format!(
-                "unknown format: '{s}' (use 'markdown', 'csv', or 'json')"
+                "unknown format: '{s}' (use 'table', 'markdown', 'csv', or 'json')"
             )),
         }
     }
@@ -183,6 +186,7 @@ pub fn generate_report(entries: &[(TimeEntry, Project)], group_by: &GroupBy) -> 
 /// Formats report rows into the specified output format.
 pub fn format_report(result: &ReportResult, format: &ReportFormat) -> String {
     match format {
+        ReportFormat::Table => format_table(result),
         ReportFormat::Markdown => format_markdown(result),
         ReportFormat::Csv => format_csv(&result.rows),
         ReportFormat::Json => format_json(&result.rows),
@@ -201,6 +205,87 @@ fn escape_csv(field: &str) -> String {
 /// Escapes a string for use in a Markdown table cell.
 fn escape_markdown(field: &str) -> String {
     field.replace('|', "\\|").replace('\n', " ")
+}
+
+/// Renders rows as a plain-text aligned table for terminal display.
+fn format_table(result: &ReportResult) -> String {
+    if result.rows.is_empty() {
+        return "No entries found.\n".to_string();
+    }
+
+    // Pre-format all values so we can measure widths
+    let formatted: Vec<(String, String, String, String)> = result
+        .rows
+        .iter()
+        .map(|row| {
+            let earnings = match row.earnings_cents {
+                Some(c) => format!("${}.{:02}", c / 100, c % 100),
+                None => "\u{2014}".to_string(),
+            };
+            (
+                row.group.clone(),
+                format_duration_human(row.total_secs),
+                row.entry_count.to_string(),
+                earnings,
+            )
+        })
+        .collect();
+
+    let total_time = format_duration_human(result.unique_total_secs);
+    let total_entries = result.unique_entry_count.to_string();
+
+    // Compute dynamic column widths from headers, rows, and footer
+    let gw = formatted
+        .iter()
+        .map(|(g, _, _, _)| g.len())
+        .chain(std::iter::once("GROUP".len()))
+        .chain(std::iter::once("Total".len()))
+        .max()
+        .unwrap_or(5);
+    let tw = formatted
+        .iter()
+        .map(|(_, t, _, _)| t.len())
+        .chain(std::iter::once("TIME".len()))
+        .chain(std::iter::once(total_time.len()))
+        .max()
+        .unwrap_or(4);
+    let ew = formatted
+        .iter()
+        .map(|(_, _, e, _)| e.len())
+        .chain(std::iter::once("ENTRIES".len()))
+        .chain(std::iter::once(total_entries.len()))
+        .max()
+        .unwrap_or(7);
+    let rw = formatted
+        .iter()
+        .map(|(_, _, _, r)| r.len())
+        .chain(std::iter::once("EARNINGS".len()))
+        .max()
+        .unwrap_or(8);
+
+    let mut out = String::new();
+
+    // Header
+    out.push_str(&format!(
+        "  {:<gw$}  {:>tw$}  {:>ew$}  {:>rw$}\n",
+        "GROUP", "TIME", "ENTRIES", "EARNINGS",
+    ));
+
+    // Rows
+    for (group, time, entries, earnings) in &formatted {
+        out.push_str(&format!(
+            "  {:<gw$}  {:>tw$}  {:>ew$}  {:>rw$}\n",
+            group, time, entries, earnings,
+        ));
+    }
+
+    // Footer
+    out.push_str(&format!(
+        "  {:<gw$}  {:>tw$}  {:>ew$}  {:>rw$}\n",
+        "Total", total_time, total_entries, "",
+    ));
+
+    out
 }
 
 /// Renders rows as a Markdown table with deduplicated totals.
@@ -452,5 +537,36 @@ mod tests {
         };
         let md = format_report(&result, &ReportFormat::Markdown);
         assert!(md.contains("a\\|b"));
+    }
+
+    #[test]
+    fn format_table_output() {
+        let result = ReportResult {
+            rows: vec![ReportRow {
+                group: "app".to_string(),
+                total_secs: 3600,
+                entry_count: 1,
+                earnings_cents: Some(15000),
+            }],
+            unique_total_secs: 3600,
+            unique_entry_count: 1,
+        };
+        let table = format_report(&result, &ReportFormat::Table);
+        assert!(table.contains("GROUP"));
+        assert!(table.contains("app"));
+        assert!(table.contains("1h"));
+        assert!(table.contains("$150.00"));
+        assert!(table.contains("Total"));
+    }
+
+    #[test]
+    fn format_table_empty() {
+        let result = ReportResult {
+            rows: vec![],
+            unique_total_secs: 0,
+            unique_entry_count: 0,
+        };
+        let table = format_report(&result, &ReportFormat::Table);
+        assert_eq!(table, "No entries found.\n");
     }
 }
