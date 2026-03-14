@@ -7,7 +7,7 @@
 
 > **This project is in early development.** The CLI is fully functional for manual and automatic time tracking, but there is no published binary or crate yet — build from source to try it out.
 
-Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the terminal — it stops. No buttons to click, no browser tabs to manage.
+Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the last terminal — it stops. No buttons to click, no browser tabs to manage.
 
 ## Why Stint?
 
