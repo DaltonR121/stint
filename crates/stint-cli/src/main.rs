@@ -1,5 +1,7 @@
 //! Entry point for the Stint CLI.
 
+mod tui;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process;
@@ -156,6 +158,10 @@ enum Commands {
         #[arg(short, long)]
         tag: Vec<String>,
     },
+
+    /// Open the interactive dashboard.
+    #[command(alias = "tui")]
+    Dashboard,
 
     /// Manage projects.
     Project {
@@ -698,6 +704,12 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Dashboard => {
+            if let Err(e) = tui::run() {
+                eprintln!("error: {e}");
+                process::exit(1);
+            }
+        }
         Commands::Start { project } => cmd_start(project),
         Commands::Stop => cmd_stop(),
         Commands::Status => cmd_status(),
