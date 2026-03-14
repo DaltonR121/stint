@@ -11,7 +11,7 @@ Ryan Dalton / Mosaic Ridge LLC — sole developer and maintainer (BDFL).
 - **Build:** Cargo workspace (`crates/stint-core`, `crates/stint-cli`)
 - **Storage:** SQLite via `rusqlite` (bundled)
 - **CLI:** `clap` for argument parsing
-- **Future web dashboard (Phase 5):** Next.js 16, React 19, TypeScript, Tailwind v4, Supabase, pnpm
+- **Future web dashboard (Phase 6):** Next.js 16, React 19, TypeScript, Tailwind v4, Supabase, pnpm
 
 ## Build & Quality
 ```sh

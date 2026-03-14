@@ -141,7 +141,7 @@ idle_threshold = 300
 auto_discover = true
 
 # Default tags applied to auto-discovered projects
-# default_tags = rust, cli
+# default_tags = "rust, cli"
 ```
 
 Environment variable overrides for the hook (no file I/O):
