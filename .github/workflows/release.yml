@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
   build:
@@ -96,3 +97,47 @@ jobs:
         with:
           generate_release_notes: true
           files: artifacts/**/*
+
+  publish-apt:
+    name: Publish to apt repository
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stint-x86_64-unknown-linux-gnu
+          path: incoming/
+
+      - name: Import GPG key
+        run: echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+
+      - name: Update apt repository
+        run: |
+          mkdir -p pool/main/s/stint
+          cp incoming/*.deb pool/main/s/stint/
+
+          mkdir -p dists/stable/main/binary-amd64
+          dpkg-scanpackages pool/main /dev/null > dists/stable/main/binary-amd64/Packages
+          gzip -kf dists/stable/main/binary-amd64/Packages
+
+          cd dists/stable
+          apt-ftparchive release . > Release
+          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
+          gpg --batch --yes --clearsign -o InRelease Release
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -A
+          git commit -m "Update apt repo for ${{ github.ref_name }}" || true
+          git push

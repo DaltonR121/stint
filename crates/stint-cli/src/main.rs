@@ -191,6 +191,13 @@ enum Commands {
     #[command(alias = "tui")]
     Dashboard,
 
+    /// Start the local HTTP API server.
+    Serve {
+        /// Port to listen on.
+        #[arg(short, long, default_value = "7653")]
+        port: u16,
+    },
+
     /// Manage projects.
     Project {
         #[command(subcommand)]
@@ -1074,6 +1081,12 @@ fn main() {
 
     match cli.command {
         Commands::Import { file } => cmd_import(file),
+        Commands::Serve { port } => {
+            if let Err(e) = stint_server::run_server(port) {
+                eprintln!("error: {e}");
+                process::exit(1);
+            }
+        }
         Commands::Dashboard => {
             if let Err(e) = tui::run() {
                 eprintln!("error: {e}");
