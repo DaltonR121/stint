@@ -421,7 +421,13 @@ fn cmd_summary() {
         from: Some(today_start),
         ..Default::default()
     };
-    let today_entries = service.get_entries(&today_filter).unwrap_or_default();
+    let today_entries = match service.get_entries(&today_filter) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
     let today_secs: i64 = today_entries
         .iter()
         .map(|(e, _)| e.computed_duration_secs().unwrap_or(0))
@@ -435,7 +441,13 @@ fn cmd_summary() {
         from: Some(week_start),
         ..Default::default()
     };
-    let week_entries = service.get_entries(&week_filter).unwrap_or_default();
+    let week_entries = match service.get_entries(&week_filter) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
     let week_secs: i64 = week_entries
         .iter()
         .map(|(e, _)| e.computed_duration_secs().unwrap_or(0))
@@ -452,7 +464,11 @@ fn cmd_summary() {
                 format_duration_human(elapsed)
             )
         }
-        _ => "Idle".to_string(),
+        Ok(None) => "Idle".to_string(),
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
     };
 
     println!("  {status}");

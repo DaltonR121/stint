@@ -49,7 +49,9 @@ pub fn import_csv(storage: &impl Storage, path: &Path) -> Result<ImportResult, S
     let project_col = col_idx("project")
         .ok_or_else(|| StintError::InvalidInput("CSV missing 'project' column".to_string()))?;
 
-    let start_col = col_idx("start");
+    let start_col = col_idx("start")
+        .ok_or_else(|| StintError::InvalidInput("CSV missing 'start' column".to_string()))?;
+    let start_col = Some(start_col); // Keep as Option for consistent field access
     let end_col = col_idx("end");
     let duration_col = col_idx("duration_secs").or_else(|| col_idx("duration"));
     let notes_col = col_idx("notes").or_else(|| col_idx("description"));
