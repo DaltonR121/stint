@@ -18,18 +18,23 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: stint
+            deb: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: stint
+            deb: false
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: stint
+            deb: false
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: stint
+            deb: false
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: stint.exe
+            deb: false
 
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +65,13 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ../../../stint-${{ matrix.target }}.zip
+
+      - name: Build .deb package
+        if: matrix.deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb -p stint-cli --target ${{ matrix.target }} --no-build
+          cp target/${{ matrix.target }}/debian/*.deb stint-${{ matrix.target }}.deb
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

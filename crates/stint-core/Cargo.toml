@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core domain logic, data models, and storage traits for Stint"
+readme = "../../README.md"
+keywords = ["time-tracking", "cli", "productivity"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 dirs = "6"

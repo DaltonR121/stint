@@ -2,10 +2,8 @@
 
 > **Terminal-native project time tracking that starts when you do.**
 
-[![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange)]()
+![Status: Alpha](https://img.shields.io/badge/status-alpha-yellow)
 [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue)](LICENSE)
-
-> **This project is in early development.** The CLI is fully functional for manual and automatic time tracking, but there is no published binary or crate yet — build from source to try it out.
 
 Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the last terminal — it stops. No buttons to click, no browser tabs to manage.
 
@@ -20,6 +18,7 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 ### Available Now
 - **Automatic time tracking** — shell hooks detect your project from `cwd` and start/stop timers transparently
 - **Manual tracking** — `stint start`, `stint stop`, `stint status`, `stint add` for full control
+- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically (recommended)
 - **Multi-shell support** — bash, zsh, and fish via `stint shell <type>` (advanced/manual hook installation)
 - **Multi-terminal handling** — merge mode keeps one timer per project across terminals
 - **Idle detection** — auto-pause after 5 minutes of inactivity, resumes on next prompt
@@ -27,7 +26,6 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 - **Rich reporting** — grouped by project or tag, with CSV/JSON/Markdown export
 - **Retroactive entries** — `stint add 2h30m --date yesterday --notes "..."` with human-friendly duration and date parsing
 - **TUI dashboard** — `stint dashboard` with live timer, today's entries, and weekly project totals
-- **One-command setup** — `stint init bash|zsh|fish` installs the shell hook automatically (recommended)
 - **Pluggable storage** — SQLite by default (WAL mode), trait-based architecture for future adapters
 
 ### Planned
@@ -36,22 +34,53 @@ Stint takes a different approach: it hooks into your shell prompt so tracking ha
 - **Import/export** — migrate from Watson, Toggl, or generic CSV
 - **Optional cloud sync** — self-hostable web dashboard with team features (future)
 
-## Quick Start
+## Install
 
-> **Note:** Stint is not yet published to crates.io. Build from source for now (see [Building From Source](#building-from-source)).
+### From GitHub Releases (recommended)
 
-### Basic Usage
+Download the latest binary for your platform from [GitHub Releases](https://github.com/DaltonR121/stint/releases):
 
 ```sh
-# Register a project
+# Linux (x86_64) — tarball
+curl -LO https://github.com/DaltonR121/stint/releases/latest/download/stint-x86_64-unknown-linux-gnu.tar.gz
+tar xzf stint-x86_64-unknown-linux-gnu.tar.gz
+sudo mv stint /usr/local/bin/
+
+# Linux (x86_64) — .deb package
+curl -LO https://github.com/DaltonR121/stint/releases/latest/download/stint-x86_64-unknown-linux-gnu.deb
+sudo dpkg -i stint-x86_64-unknown-linux-gnu.deb
+
+# macOS (Apple Silicon)
+curl -LO https://github.com/DaltonR121/stint/releases/latest/download/stint-aarch64-apple-darwin.tar.gz
+tar xzf stint-aarch64-apple-darwin.tar.gz
+sudo mv stint /usr/local/bin/
+```
+
+### From Source
+
+```sh
+git clone https://github.com/DaltonR121/stint.git
+cd stint
+cargo build --release
+sudo cp target/release/stint /usr/local/bin/
+```
+
+#### Requirements
+
+- Rust 1.75+ (2021 edition)
+- SQLite (bundled via `rusqlite`, no system dependency needed)
+
+## Quick Start
+
+```sh
+# 1. Register a project
 stint project add my-app --path ~/Projects/my-app --tags client,frontend
 
-# Manual tracking
-stint start my-app
-stint stop
+# 2. Set up auto-tracking (one-time)
+stint init bash    # or: stint init zsh / stint init fish
 
-# Add time retroactively
-stint add my-app 2h30m --date yesterday --notes "Forgot to track"
+# 3. Restart your shell, then just work normally.
+#    Navigate to your project directory — tracking starts automatically.
 
 # View your time
 stint status
@@ -63,21 +92,17 @@ stint report --format csv > timesheet.csv
 stint dashboard
 ```
 
-### Auto-Tracking
+### Manual Tracking
 
-Set up auto-tracking with one command:
+If you prefer explicit control (or haven't set up auto-tracking):
 
 ```sh
-# Install the shell hook (appends to your shell config)
-stint init bash    # or: stint init zsh / stint init fish
+stint start my-app
+stint stop
 
-# Or add manually to your shell config:
-# eval "$(stint shell bash)"
+# Add time retroactively
+stint add my-app 2h30m --date yesterday --notes "Forgot to track"
 ```
-
-Navigate to a registered project directory and Stint starts tracking. Switch directories — it switches. In merge mode, the timer stops when the last terminal tracking that project closes or leaves the directory. No manual intervention.
-
-The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
 
 ## How It Works
 
@@ -87,6 +112,8 @@ Stint installs a shell hook that fires on every prompt render. The hook calls a 
 2. Compares the detected project to the last-known context for your shell session
 3. Starts, stops, or switches timers as needed
 4. Detects idle gaps (>5 min) and trims them from tracked time
+
+The hook is engineered to execute in **under 2 milliseconds** — you won't notice it.
 
 ### Multi-Terminal Behavior
 
@@ -115,20 +142,6 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - **Solo/indie developers** who want to understand where their time goes
 - **Team developers** reporting time to project management systems
 
-## Building From Source
-
-```sh
-git clone https://github.com/DaltonR121/stint.git
-cd stint
-cargo build
-cargo test
-```
-
-### Requirements
-
-- Rust 1.75+ (2021 edition)
-- SQLite (bundled via `rusqlite`, no system dependency needed)
-
 ## Project Structure
 
 ```
@@ -136,7 +149,7 @@ stint/
   Cargo.toml                # Workspace root
   crates/
     stint-core/             # Domain logic, storage, data models, services
-    stint-cli/              # CLI commands and user interaction
+    stint-cli/              # CLI commands, TUI dashboard, user interaction
 ```
 
 ## Contributing
