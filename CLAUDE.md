@@ -36,6 +36,6 @@ FSL-1.1-MIT — free to self-host, commercial hosting reserved, converts to MIT 
 - No telemetry, no analytics, no phone-home behavior
 
 ## Current Phase
-Phase 2 — Auto-Tracking (shell hooks, idle detection, multi-terminal)
+Phase 3 — TUI + v0.1.0 (interactive dashboard, first public release)
 
-Phases 0 (Foundation) and 1 (Core CLI) are complete.
+Phases 0 (Foundation), 1 (Core CLI), and 2 (Auto-Tracking) are complete.
