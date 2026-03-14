@@ -64,6 +64,11 @@ fn parse_duration_arg(s: &str) -> Result<i64, String> {
     parse_duration(s)
 }
 
+/// Returns the current local time, falling back to UTC if local time is unavailable.
+fn now_local() -> OffsetDateTime {
+    OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc())
+}
+
 /// Terminal-native project time tracker.
 #[derive(Parser)]
 #[command(name = "stint", version, about)]
@@ -236,7 +241,7 @@ fn build_filter(
     project: &Option<String>,
     tags: &[String],
 ) -> EntryFilter {
-    let now = OffsetDateTime::now_utc();
+    let now = now_local();
 
     let from_dt = from.as_ref().map(|s| match parse_date(s, now) {
         Ok(dt) => dt,
@@ -328,7 +333,7 @@ fn cmd_status() {
 
 /// Handles the `add` command.
 fn cmd_add(project: String, duration_secs: i64, date: Option<String>, notes: Option<String>) {
-    let now = OffsetDateTime::now_utc();
+    let now = now_local();
     let date_dt = date.as_ref().map(|s| match parse_date(s, now) {
         Ok(dt) => dt,
         Err(e) => {
@@ -427,11 +432,6 @@ fn cmd_report(
         }
     };
 
-    if entries.is_empty() {
-        println!("No entries found.");
-        return;
-    }
-
     let result = generate_report(&entries, &group);
     print!("{}", format_report(&result, &fmt));
 }
@@ -500,10 +500,13 @@ fn cmd_project_list(all: bool) {
 
     if projects.is_empty() {
         if !all {
-            let has_archived = storage
-                .list_projects(Some(ProjectStatus::Archived))
-                .map(|p| !p.is_empty())
-                .unwrap_or(false);
+            let has_archived = match storage.list_projects(Some(ProjectStatus::Archived)) {
+                Ok(p) => !p.is_empty(),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    process::exit(1);
+                }
+            };
             if has_archived {
                 println!("No active projects. Use 'stint project list --all' to include archived.");
                 return;
@@ -576,9 +579,13 @@ fn cmd_project_delete(name: String, force: bool) {
 
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
-            Ok(0) | Err(_) => {
+            Ok(0) => {
                 println!("Cancelled.");
                 return;
+            }
+            Err(e) => {
+                eprintln!("error: failed to read input: {e}");
+                process::exit(1);
             }
             Ok(_) => {}
         }
