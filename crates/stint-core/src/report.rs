@@ -512,4 +512,35 @@ mod tests {
         let md = format_report(&result, &ReportFormat::Markdown);
         assert!(md.contains("a\\|b"));
     }
+
+    #[test]
+    fn format_table_output() {
+        let result = ReportResult {
+            rows: vec![ReportRow {
+                group: "app".to_string(),
+                total_secs: 3600,
+                entry_count: 1,
+                earnings_cents: Some(15000),
+            }],
+            unique_total_secs: 3600,
+            unique_entry_count: 1,
+        };
+        let table = format_report(&result, &ReportFormat::Table);
+        assert!(table.contains("GROUP"));
+        assert!(table.contains("app"));
+        assert!(table.contains("1h"));
+        assert!(table.contains("$150.00"));
+        assert!(table.contains("Total"));
+    }
+
+    #[test]
+    fn format_table_empty() {
+        let result = ReportResult {
+            rows: vec![],
+            unique_total_secs: 0,
+            unique_entry_count: 0,
+        };
+        let table = format_report(&result, &ReportFormat::Table);
+        assert_eq!(table, "No entries found.\n");
+    }
 }
