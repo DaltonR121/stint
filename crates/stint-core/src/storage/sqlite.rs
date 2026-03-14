@@ -778,6 +778,35 @@ impl Storage for SqliteStorage {
 
         Ok(())
     }
+
+    fn count_active_sessions_for_project(
+        &self,
+        project_id: &ProjectId,
+        exclude_session_id: &SessionId,
+    ) -> Result<usize, StorageError> {
+        let count: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM sessions
+             WHERE current_project_id = ?1 AND ended_at IS NULL AND id != ?2",
+            params![project_id.as_str(), exclude_session_id.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    fn get_stale_sessions(
+        &self,
+        older_than: OffsetDateTime,
+    ) -> Result<Vec<ShellSession>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM sessions WHERE ended_at IS NULL AND last_heartbeat < ?1")?;
+        let sessions = stmt
+            .query_map(params![Self::fmt_ts(&older_than)], |row| {
+                self.session_from_row(row)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(sessions)
+    }
 }
 
 #[cfg(test)]

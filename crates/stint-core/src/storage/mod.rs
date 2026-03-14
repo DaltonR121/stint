@@ -76,4 +76,17 @@ pub trait Storage {
 
     /// Marks a session as ended.
     fn end_session(&self, id: &SessionId, ended_at: OffsetDateTime) -> Result<(), StorageError>;
+
+    /// Counts active sessions tracking a given project, excluding a specific session.
+    fn count_active_sessions_for_project(
+        &self,
+        project_id: &ProjectId,
+        exclude_session_id: &SessionId,
+    ) -> Result<usize, StorageError>;
+
+    /// Finds active sessions whose last heartbeat is older than the given time.
+    fn get_stale_sessions(
+        &self,
+        older_than: OffsetDateTime,
+    ) -> Result<Vec<ShellSession>, StorageError>;
 }

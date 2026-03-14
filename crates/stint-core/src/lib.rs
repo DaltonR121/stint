@@ -3,6 +3,7 @@
 pub mod dateparse;
 pub mod duration;
 pub mod error;
+pub mod hook;
 pub mod models;
 pub mod report;
 pub mod service;
