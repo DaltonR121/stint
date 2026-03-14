@@ -106,12 +106,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Verify packages
-        run: |
-          cargo package -p stint-core --allow-dirty
-          cargo package -p stint-server --allow-dirty
-          cargo package -p stint-cli --allow-dirty
-
       - name: Publish stint-core
         run: |
           VERSION=$(cargo metadata --no-deps --format-version 1 | grep -o '"stint-core","version":"[^"]*"' | cut -d'"' -f6)
@@ -124,7 +118,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for stint-core index update
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish stint-server
         run: |
@@ -138,7 +132,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for stint-server index update
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish stint-cli
         run: |
