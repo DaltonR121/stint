@@ -23,7 +23,7 @@ cargo fmt --check
 All four must pass before committing.
 
 ## License
-BSL-1.1 — free to use and self-host, commercial hosting rights reserved to Mosaic Ridge LLC.
+MIT — free to use, modify, and distribute.
 
 ## Commit Messages
 - Keep short and focused on what changed and why
