@@ -399,7 +399,37 @@ fn cmd_stop() {
 
 /// Handles the `status` command.
 fn cmd_status() {
-    let service = open_service();
+    let storage = open_storage();
+
+    // Try to find the current terminal's session by parent PID (the shell)
+    let pid = {
+        #[cfg(unix)]
+        {
+            unsafe { libc::getppid() as u32 }
+        }
+        #[cfg(not(unix))]
+        {
+            std::process::id()
+        }
+    };
+    if let Ok(Some(session)) = storage.get_session_by_pid(pid) {
+        if let Some(ref project_id) = session.current_project_id {
+            if let Ok(Some(entry)) = storage.get_running_entry(project_id) {
+                let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();
+                if let Ok(Some(project)) = storage.get_project(project_id) {
+                    println!(
+                        "Tracking '{}' for {}",
+                        project.name,
+                        format_duration_human(elapsed)
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    // Fall back to any running entry (for manual stint start)
+    let service = StintService::new(storage);
     match service.get_status() {
         Ok(Some((entry, project))) => {
             let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();

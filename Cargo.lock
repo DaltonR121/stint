@@ -1173,6 +1173,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
+ "libc",
  "ratatui",
  "stint-core",
  "stint-server",
