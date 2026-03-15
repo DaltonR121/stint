@@ -413,6 +413,7 @@ fn cmd_status() {
         }
     };
     if let Ok(Some(session)) = storage.get_session_by_pid(pid) {
+        // Session found for this terminal — use it as the source of truth
         if let Some(ref project_id) = session.current_project_id {
             if let Ok(Some(entry)) = storage.get_running_entry(project_id) {
                 let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();
@@ -426,9 +427,12 @@ fn cmd_status() {
                 }
             }
         }
+        // Session exists but no project — this terminal isn't tracking
+        println!("No timer running.");
+        return;
     }
 
-    // Fall back to any running entry (for manual stint start)
+    // No session found — fall back to any running entry (for manual stint start)
     let service = StintService::new(storage);
     match service.get_status() {
         Ok(Some((entry, project))) => {
