@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-03-15
+
+### Fixed
+- `stint status` now shows the correct project for each terminal (uses parent PID to identify the shell session)
+- Leaving a project directory no longer shows another terminal's project
+
 ## [0.2.0] — 2026-03-14
 
 ### Added
