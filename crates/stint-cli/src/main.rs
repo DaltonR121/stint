@@ -271,11 +271,11 @@ enum ProjectCommands {
         name: String,
 
         /// Set hourly rate in dollars (e.g., 150.00).
-        #[arg(long, value_parser = parse_cents)]
+        #[arg(long, value_parser = parse_cents, conflicts_with = "clear_rate")]
         rate: Option<i64>,
 
         /// Clear the hourly rate.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "rate")]
         clear_rate: bool,
 
         /// Set comma-separated tags (replaces existing tags).
@@ -899,7 +899,6 @@ fn cmd_project_list(all: bool) {
     }
 }
 
-/// Handles the `project archive` command.
 /// Handles the `project edit` command.
 fn cmd_project_edit(
     name: String,
@@ -937,7 +936,19 @@ fn cmd_project_edit(
     }
 
     if let Some(ref new_name) = rename {
-        project.name = new_name.clone();
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            eprintln!("error: project name cannot be empty");
+            process::exit(1);
+        }
+        // Check for name collision (allow renaming to same name with different case)
+        if let Ok(Some(existing)) = storage.get_project_by_name(trimmed) {
+            if existing.id != project.id {
+                eprintln!("error: project '{}' already exists", existing.name);
+                process::exit(1);
+            }
+        }
+        project.name = trimmed.to_string();
         changed = true;
     }
 
