@@ -434,17 +434,43 @@ fn cmd_status() {
             std::process::id()
         }
     };
+    // Load idle threshold from config env var or default (minimum 1 second)
+    let idle_threshold: i64 = std::env::var("STINT_IDLE_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300)
+        .max(1);
+
     if let Ok(Some(session)) = storage.get_session_by_pid(pid) {
         // Session found for this terminal — use it as the source of truth
         if let Some(ref project_id) = session.current_project_id {
             if let Ok(Some(entry)) = storage.get_running_entry(project_id) {
-                let elapsed = (OffsetDateTime::now_utc() - entry.start).whole_seconds();
                 if let Ok(Some(project)) = storage.get_project(project_id) {
-                    println!(
-                        "Tracking '{}' for {}",
-                        project.name,
-                        format_duration_human(elapsed)
-                    );
+                    let now = OffsetDateTime::now_utc();
+                    let since_heartbeat = (now - session.last_heartbeat).whole_seconds();
+
+                    if since_heartbeat > idle_threshold {
+                        // Session is idle — show trimmed time
+                        let active_time = (session.last_heartbeat - entry.start).whole_seconds();
+                        let idle_time = since_heartbeat;
+                        println!(
+                            "Tracking '{}' for {} (idle {})",
+                            project.name,
+                            format_duration_human(active_time.max(0)),
+                            format_duration_human(idle_time),
+                        );
+                        eprintln!("  Idle time will be trimmed on next activity.");
+                        eprintln!(
+                            "  To adjust: STINT_IDLE_THRESHOLD=600 or idle_threshold in ~/.config/stint/config.toml"
+                        );
+                    } else {
+                        let elapsed = (now - entry.start).whole_seconds();
+                        println!(
+                            "Tracking '{}' for {}",
+                            project.name,
+                            format_duration_human(elapsed)
+                        );
+                    }
                     return;
                 }
             }
