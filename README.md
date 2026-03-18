@@ -131,6 +131,89 @@ The CSV must have `project` and `start` columns. Optional: `end`, `duration_secs
 - **Configurable** — `~/.config/stint/config.toml` for idle threshold, default rate, default tags, and auto-discovery toggle
 - **Local-first storage** — SQLite with WAL mode, no account, no cloud, no telemetry
 
+<details>
+<summary><h2>Command Reference</h2></summary>
+
+### Tracking
+
+| Command | Description |
+|---------|-------------|
+| `stint start <project>` | Start tracking time for a project |
+| `stint stop` | Stop the currently running timer |
+| `stint status` | Show what the current terminal is tracking |
+| `stint summary` | Quick overview of today and this week |
+
+### Time Entries
+
+| Command | Description |
+|---------|-------------|
+| `stint add <project> <duration>` | Add time retroactively |
+| `stint log [--from --to --project --tag]` | View time entries |
+| `stint report [--group-by --format --from --to]` | Generate grouped reports |
+| `stint edit [--duration --notes]` | Edit the most recent entry |
+| `stint delete-entry [--force]` | Delete the most recent entry |
+| `stint import <file.csv>` | Import entries from CSV |
+
+#### `stint add` flags
+- `-d, --date <DATE>` — date for the entry (e.g., "today", "yesterday", "2026-01-15")
+- `-n, --notes <NOTES>` — notes for the entry
+
+#### `stint log` flags
+- `--from <DATE>` — start date filter (e.g., "today", "last monday", "2026-01-01")
+- `--to <DATE>` — end date filter
+- `-p, --project <NAME>` — filter by project
+- `-t, --tag <TAG>` — filter by tag (can be repeated)
+
+#### `stint report` flags
+- `--group-by <project|tag>` — group results (default: project)
+- `--format <table|markdown|csv|json>` — output format (default: table)
+- `--from <DATE>` — start date filter
+- `--to <DATE>` — end date filter
+- `-p, --project <NAME>` — filter by project
+- `-t, --tag <TAG>` — filter by tag (can be repeated)
+
+### Projects
+
+| Command | Description |
+|---------|-------------|
+| `stint project add <name> [--path --tags --rate]` | Register a new project |
+| `stint project list [--all]` | List registered projects |
+| `stint project edit <name> [--rate --clear-rate --tags --rename]` | Edit project settings |
+| `stint project archive <name>` | Archive a project |
+| `stint project delete <name> [--force]` | Delete a project and all entries |
+| `stint project ignore <path>` | Ignore a directory for auto-discovery |
+| `stint project unignore <path>` | Remove from ignore list |
+
+#### `stint project add` flags
+- `-p, --path <PATH>` — directory path for the project
+- `-t, --tags <CSV>` — comma-separated tags
+- `--rate <DOLLARS>` — hourly rate (e.g., 150.00)
+
+#### `stint project edit` flags
+- `--rate <DOLLARS>` — set hourly rate
+- `--clear-rate` — remove hourly rate
+- `-t, --tags <CSV>` — set tags (replaces existing)
+- `--rename <NAME>` — rename the project
+
+### Setup & Integration
+
+| Command | Description |
+|---------|-------------|
+| `stint init <bash\|zsh\|fish>` | Install shell hook in config file (recommended) |
+| `stint shell <bash\|zsh\|fish>` | Output hook script for manual eval |
+| `stint dashboard` | Open interactive TUI dashboard |
+| `stint serve [--port]` | Start local HTTP API server (default port: 7653) |
+
+### Duration Format
+
+Durations use human-friendly syntax: `2h30m`, `45m`, `1h`, `90s`, `1h30m15s`
+
+### Date Format
+
+Dates support: `today`, `yesterday`, `last monday`, `last fri`, or ISO format `2026-01-15`
+
+</details>
+
 ## Configuration
 
 Stint reads optional configuration from `~/.config/stint/config.toml`:
