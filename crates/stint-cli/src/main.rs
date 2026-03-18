@@ -265,6 +265,28 @@ enum ProjectCommands {
         all: bool,
     },
 
+    /// Edit a project's settings.
+    Edit {
+        /// Project name.
+        name: String,
+
+        /// Set hourly rate in dollars (e.g., 150.00).
+        #[arg(long, value_parser = parse_cents, conflicts_with = "clear_rate")]
+        rate: Option<i64>,
+
+        /// Clear the hourly rate.
+        #[arg(long, conflicts_with = "rate")]
+        clear_rate: bool,
+
+        /// Set comma-separated tags (replaces existing tags).
+        #[arg(short, long)]
+        tags: Option<String>,
+
+        /// Rename the project.
+        #[arg(long)]
+        rename: Option<String>,
+    },
+
     /// Archive a project (hide from default listings).
     Archive {
         /// Project name.
@@ -877,7 +899,81 @@ fn cmd_project_list(all: bool) {
     }
 }
 
-/// Handles the `project archive` command.
+/// Handles the `project edit` command.
+fn cmd_project_edit(
+    name: String,
+    rate: Option<i64>,
+    clear_rate: bool,
+    tags: Option<String>,
+    rename: Option<String>,
+) {
+    let storage = open_storage();
+    let mut project = match storage.get_project_by_name(&name) {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            eprintln!("error: project '{name}' not found");
+            process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+
+    let mut changed = false;
+
+    if clear_rate {
+        project.hourly_rate_cents = None;
+        changed = true;
+    } else if let Some(r) = rate {
+        project.hourly_rate_cents = Some(r);
+        changed = true;
+    }
+
+    if let Some(t) = tags {
+        project.tags = stint_core::models::tag::parse_tags(&t);
+        changed = true;
+    }
+
+    if let Some(ref new_name) = rename {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            eprintln!("error: project name cannot be empty");
+            process::exit(1);
+        }
+        // Check for name collision (allow renaming to same name with different case)
+        if let Ok(Some(existing)) = storage.get_project_by_name(trimmed) {
+            if existing.id != project.id {
+                eprintln!("error: project '{}' already exists", existing.name);
+                process::exit(1);
+            }
+        }
+        project.name = trimmed.to_string();
+        changed = true;
+    }
+
+    if !changed {
+        println!("Nothing to change. Use --rate, --clear-rate, --tags, or --rename.");
+        return;
+    }
+
+    project.updated_at = OffsetDateTime::now_utc();
+    match storage.update_project(&project) {
+        Ok(()) => {
+            let display_name = rename.as_deref().unwrap_or(&name);
+            let rate_str = match project.hourly_rate_cents {
+                Some(cents) => format!(" (${}.{:02}/hr)", cents / 100, cents % 100),
+                None => String::new(),
+            };
+            println!("Updated project '{display_name}'{rate_str}");
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 fn cmd_project_archive(name: String) {
     let service = open_service();
     match service.archive_project(&name) {
@@ -1161,6 +1257,13 @@ fn main() {
                 rate,
             } => cmd_project_add(name, path, tags, rate),
             ProjectCommands::List { all } => cmd_project_list(all),
+            ProjectCommands::Edit {
+                name,
+                rate,
+                clear_rate,
+                tags,
+                rename,
+            } => cmd_project_edit(name, rate, clear_rate, tags, rename),
             ProjectCommands::Archive { name } => cmd_project_archive(name),
             ProjectCommands::Delete { name, force } => cmd_project_delete(name, force),
             ProjectCommands::Ignore { path } => cmd_project_ignore(path),
