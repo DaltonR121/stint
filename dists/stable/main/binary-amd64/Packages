@@ -1,14 +1,14 @@
 Package: stint
-Version: 0.2.1-1
+Version: 0.2.2-1
 Architecture: amd64
 Maintainer: Ryan Dalton <ryan@mosaicridge.com>
-Installed-Size: 4802
+Installed-Size: 4814
 Depends: libc6 (>= 2.39)
 Filename: pool/main/s/stint/stint-x86_64-unknown-linux-gnu.deb
-Size: 1763836
-MD5sum: 704b5d9cbbc5f62a14fb8a2e019a8e91
-SHA1: e5527c2900c0409be50787f828f1a00285b77faa
-SHA256: 9c80628912351780cfa4affafce8977e771ceedb5509495fb056dc5a700be75b
+Size: 1765816
+MD5sum: 0faa605fdf4729b8fe9935fbf2fee71f
+SHA1: 11fda517977a4eeec5a3f57dd1b4ace4077a8e39
+SHA256: baf7e9f218e7d5a7b53db6e054f1e0b68dd16bc37b15080cdd5ac2ea44cbb408
 Section: utils
 Priority: optional
 Homepage: https://github.com/DaltonR121/stint
