@@ -211,9 +211,9 @@ stint/
 
 ## Contributing
 
-Stint is maintained by a single developer under a [BDFL governance model](CONTRIBUTING.md). Contributions are welcome but please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
+Stint is solo-maintained by [Ryan Dalton](https://github.com/DaltonR121). Bug reports and feature requests are welcome — pull requests are not. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-**TL;DR:** Open an issue first to discuss. PRs without prior discussion may not be reviewed.
+The MIT license means you're free to fork and build your own version.
 
 ## Security
 
