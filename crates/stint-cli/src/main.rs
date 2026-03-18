@@ -434,11 +434,12 @@ fn cmd_status() {
             std::process::id()
         }
     };
-    // Load idle threshold from config env var or default
+    // Load idle threshold from config env var or default (minimum 1 second)
     let idle_threshold: i64 = std::env::var("STINT_IDLE_THRESHOLD")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(300);
+        .unwrap_or(300)
+        .max(1);
 
     if let Ok(Some(session)) = storage.get_session_by_pid(pid) {
         // Session found for this terminal — use it as the source of truth
