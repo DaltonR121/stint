@@ -16,11 +16,10 @@ use crate::models::session::ShellSession;
 use crate::models::types::{EntryId, ProjectId, SessionId};
 use crate::storage::Storage;
 
-/// Stale session threshold in seconds (10 minutes).
-/// Set below 1 hour so force-killed terminals get cleaned up quickly.
-/// Works in tandem with idle detection (5 min) — idle stops the entry,
-/// stale reaping cleans up the session.
-const STALE_THRESHOLD_SECS: i64 = 600;
+/// Minimum stale session threshold in seconds (10 minutes).
+/// The actual threshold is computed as max(this, idle_threshold * 2) to ensure
+/// stale reaping never fires before idle detection.
+const MIN_STALE_THRESHOLD_SECS: i64 = 600;
 
 /// What happened as a result of the hook firing.
 #[derive(Debug, PartialEq, Eq)]
@@ -70,7 +69,7 @@ fn handle_cold_start(
     config: &StintConfig,
 ) -> Result<HookAction, StintError> {
     // Reap stale sessions opportunistically
-    let _ = reap_stale_sessions(storage, now);
+    let _ = reap_stale_sessions(storage, now, config);
 
     // Detect project from cwd (registered paths first, then .git auto-discovery)
     let active_project = detect_or_discover(storage, cwd, now, config)?;
@@ -245,8 +244,10 @@ pub fn handle_hook_exit(
 pub fn reap_stale_sessions(
     storage: &impl Storage,
     now: OffsetDateTime,
+    config: &StintConfig,
 ) -> Result<usize, StintError> {
-    let threshold = now - time::Duration::seconds(STALE_THRESHOLD_SECS);
+    let stale_secs = (config.idle_threshold_secs * 2).max(MIN_STALE_THRESHOLD_SECS);
+    let threshold = now - time::Duration::seconds(stale_secs);
     let stale = storage.get_stale_sessions(threshold)?;
     let count = stale.len();
 
@@ -851,7 +852,7 @@ mod tests {
 
         // Reap stale sessions
         let now = OffsetDateTime::now_utc();
-        let reaped = reap_stale_sessions(&storage, now).unwrap();
+        let reaped = reap_stale_sessions(&storage, now, &test_config()).unwrap();
         assert_eq!(reaped, 1);
 
         // Session should be ended
