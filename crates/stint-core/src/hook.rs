@@ -246,7 +246,10 @@ pub fn reap_stale_sessions(
     now: OffsetDateTime,
     config: &StintConfig,
 ) -> Result<usize, StintError> {
-    let stale_secs = (config.idle_threshold_secs * 2).max(MIN_STALE_THRESHOLD_SECS);
+    let stale_secs = config
+        .idle_threshold_secs
+        .saturating_mul(2)
+        .max(MIN_STALE_THRESHOLD_SECS);
     let threshold = now - time::Duration::seconds(stale_secs);
     let stale = storage.get_stale_sessions(threshold)?;
     let count = stale.len();
@@ -861,6 +864,88 @@ mod tests {
         // Entry should be stopped at last_heartbeat time
         let stopped = storage.get_entry(&entry.id).unwrap().unwrap();
         assert!(!stopped.is_running());
+    }
+
+    #[test]
+    fn stale_reaping_at_minimum_threshold() {
+        let storage = setup();
+        create_project(&storage, "my-app", "/home/user/my-app");
+
+        // Session 11 minutes old (just over the 10-minute minimum)
+        let old_time = OffsetDateTime::now_utc() - time::Duration::minutes(11);
+        let project = storage.get_project_by_name("my-app").unwrap().unwrap();
+
+        let session = ShellSession {
+            id: SessionId::new(),
+            pid: 6666,
+            shell: Some("bash".to_string()),
+            cwd: PathBuf::from("/home/user/my-app"),
+            current_project_id: Some(project.id.clone()),
+            started_at: old_time,
+            last_heartbeat: old_time,
+            ended_at: None,
+        };
+        storage.upsert_session(&session).unwrap();
+        let entry = new_hook_entry(&project.id, &session.id, old_time);
+        storage.create_entry(&entry).unwrap();
+
+        let now = OffsetDateTime::now_utc();
+        let reaped = reap_stale_sessions(&storage, now, &test_config()).unwrap();
+        assert_eq!(reaped, 1);
+        assert!(storage.get_session_by_pid(6666).unwrap().is_none());
+    }
+
+    #[test]
+    fn stale_reaping_uses_idle_threshold_times_two() {
+        let storage = setup();
+        create_project(&storage, "my-app", "/home/user/my-app");
+
+        // Custom config: idle = 8 minutes, so stale = 16 minutes
+        let mut config = test_config();
+        config.idle_threshold_secs = 480; // 8 minutes
+
+        // Session 17 minutes old (just over 16-minute computed threshold)
+        let old_time = OffsetDateTime::now_utc() - time::Duration::minutes(17);
+        let project = storage.get_project_by_name("my-app").unwrap().unwrap();
+
+        let session = ShellSession {
+            id: SessionId::new(),
+            pid: 7777,
+            shell: Some("bash".to_string()),
+            cwd: PathBuf::from("/home/user/my-app"),
+            current_project_id: Some(project.id.clone()),
+            started_at: old_time,
+            last_heartbeat: old_time,
+            ended_at: None,
+        };
+        storage.upsert_session(&session).unwrap();
+        let entry = new_hook_entry(&project.id, &session.id, old_time);
+        storage.create_entry(&entry).unwrap();
+
+        let now = OffsetDateTime::now_utc();
+        let reaped = reap_stale_sessions(&storage, now, &config).unwrap();
+        assert_eq!(reaped, 1);
+
+        // Verify a 15-minute-old session is NOT reaped with this config
+        let recent_time = OffsetDateTime::now_utc() - time::Duration::minutes(15);
+        let session2 = ShellSession {
+            id: SessionId::new(),
+            pid: 8888,
+            shell: None,
+            cwd: PathBuf::from("/home/user/my-app"),
+            current_project_id: None,
+            started_at: recent_time,
+            last_heartbeat: recent_time,
+            ended_at: None,
+        };
+        storage.upsert_session(&session2).unwrap();
+
+        let now = OffsetDateTime::now_utc();
+        let reaped = reap_stale_sessions(&storage, now, &config).unwrap();
+        assert_eq!(
+            reaped, 0,
+            "15-min-old session should not be reaped with 16-min threshold"
+        );
     }
 
     #[test]
