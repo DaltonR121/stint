@@ -16,8 +16,11 @@ use crate::models::session::ShellSession;
 use crate::models::types::{EntryId, ProjectId, SessionId};
 use crate::storage::Storage;
 
-/// Stale session threshold in seconds (1 hour).
-const STALE_THRESHOLD_SECS: i64 = 3600;
+/// Stale session threshold in seconds (10 minutes).
+/// Set below 1 hour so force-killed terminals get cleaned up quickly.
+/// Works in tandem with idle detection (5 min) — idle stops the entry,
+/// stale reaping cleans up the session.
+const STALE_THRESHOLD_SECS: i64 = 600;
 
 /// What happened as a result of the hook firing.
 #[derive(Debug, PartialEq, Eq)]
