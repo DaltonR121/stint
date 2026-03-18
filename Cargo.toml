@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/stint-core", "crates/stint-cli", "crates/stint-server"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/DaltonR121/stint"

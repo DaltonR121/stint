@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-03-15
+
+### Added
+- `stint project edit <name>` command to update rate, tags, or rename any project
+- Mutual exclusion for `--rate` and `--clear-rate` flags
+- Rename validation with uniqueness checking
+
+### Fixed
+- Stale session threshold lowered from 1 hour to 10 minutes for faster cleanup
+- Stale threshold computed from config (`idle_threshold * 2`) to prevent undercutting
+- Saturating arithmetic on threshold computation to prevent overflow
+
 ## [0.2.1] — 2026-03-15
 
 ### Fixed
