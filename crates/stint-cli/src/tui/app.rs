@@ -100,8 +100,8 @@ impl App {
         // Running timer
         self.running_timer = self.service.get_status().unwrap_or(None);
 
-        // Today's entries
-        let today_start = now.date().midnight().assume_utc();
+        // Today's entries — use replace_time to preserve the local offset
+        let today_start = now.replace_time(time::Time::MIDNIGHT);
         let today_filter = EntryFilter {
             from: Some(today_start),
             ..Default::default()
@@ -109,7 +109,7 @@ impl App {
         self.today_entries = self.service.get_entries(&today_filter).unwrap_or_default();
 
         // Yesterday's entries
-        let yesterday_start = (now.date().midnight() - time::Duration::days(1)).assume_utc();
+        let yesterday_start = today_start - time::Duration::days(1);
         let yesterday_filter = EntryFilter {
             from: Some(yesterday_start),
             to: Some(today_start),

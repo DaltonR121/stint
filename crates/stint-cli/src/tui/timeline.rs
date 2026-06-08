@@ -44,9 +44,6 @@ enum TimelineItem<'a> {
     },
 }
 
-/// Which date range the timeline is showing.
-/// Toggled between Today and Yesterday in the UI.
-
 /// Renders the timeline panel.
 pub fn render_timeline(
     frame: &mut Frame,
@@ -256,7 +253,6 @@ fn build_grouped_timeline<'a>(
                     end: next_entry.start,
                     duration_secs: gap,
                 });
-                continue;
             } else if gap > 120 && !is_same_project {
                 // Different project, add idle gap if significant
                 items.push(TimelineItem::Idle {
