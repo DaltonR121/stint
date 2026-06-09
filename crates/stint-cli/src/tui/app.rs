@@ -115,7 +115,10 @@ impl App {
             to: Some(today_start),
             ..Default::default()
         };
-        self.yesterday_entries = self.service.get_entries(&yesterday_filter).unwrap_or_default();
+        self.yesterday_entries = self
+            .service
+            .get_entries(&yesterday_filter)
+            .unwrap_or_default();
 
         // This week's totals (Monday to now)
         let weekday = now.weekday().number_days_from_monday();
@@ -184,11 +187,10 @@ impl App {
         }
     }
 
-    /// Returns an estimated max scroll for the timeline panel.
+    /// Returns the exact rendered line count of the timeline panel, so scrolling
+    /// clamps precisely to the content (no stranded bottom, no blank overscroll).
     pub fn timeline_scroll_items(&self) -> usize {
-        // Each entry takes roughly 2 lines (entry + blank), idle gaps ~2 lines
-        let entries = self.timeline_entries().len();
-        entries.saturating_mul(2)
+        super::timeline::line_count(self.timeline_entries(), self.timeline_view)
     }
 
     /// Toggle the timeline view between today and yesterday.

@@ -59,27 +59,51 @@ pub fn render_timeline(
         Style::default().fg(Color::DarkGray)
     };
 
+    let lines = build_timeline_lines(entries, view);
+
+    // Clamp scroll defensively — App clamps it too, but never trust the caller to
+    // keep an offset that would skip every line and blank the panel.
+    let skip = scroll.min(lines.len());
+    let scrolled_lines: Vec<Line> = lines.into_iter().skip(skip).collect();
+
+    let view_label = match view {
+        TimelineView::Today => "Timeline (Today)",
+        TimelineView::Yesterday => "Timeline (Yesterday)",
+    };
+    let view_title = format!(" {view_label} ");
+    let timeline = Paragraph::new(scrolled_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(view_title)
+            .border_style(border_style),
+    );
+    frame.render_widget(timeline, area);
+}
+
+/// Returns the total number of rendered lines for the given view, so the caller
+/// can clamp scrolling exactly to the content (no stranded bottom, no blank
+/// overscroll). Mirrors the line count produced by [`render_timeline`].
+pub fn line_count(entries: &[(TimeEntry, Project)], view: TimelineView) -> usize {
+    build_timeline_lines(entries, view).len()
+}
+
+/// Builds the full set of rendered lines for the timeline (header, entries, idle
+/// gaps), independent of scroll. Shared by [`render_timeline`] and [`line_count`]
+/// so the two can never drift.
+fn build_timeline_lines(
+    entries: &[(TimeEntry, Project)],
+    view: TimelineView,
+) -> Vec<Line<'static>> {
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
 
-    // Determine date range based on view mode
-    let (view_label, day_start, day_end) = match view {
-        TimelineView::Today => {
-            let today_start = now.date().midnight().assume_utc();
-            (
-                "Timeline (Today)".to_string(),
-                today_start,
-                today_start + time::Duration::days(1),
-            )
-        }
-        TimelineView::Yesterday => {
-            let yesterday_start =
-                (now.date().midnight() - time::Duration::days(1)).assume_utc();
-            (
-                "Timeline (Yesterday)".to_string(),
-                yesterday_start,
-                yesterday_start + time::Duration::days(1),
-            )
-        }
+    // Determine date range based on view mode. Use replace_time to preserve the
+    // local offset, matching how App::refresh fetches entries — otherwise the
+    // filter boundaries here disagree with the fetched window and entries near
+    // midnight get dropped for any non-UTC user.
+    let today_start = now.replace_time(time::Time::MIDNIGHT);
+    let (day_start, day_end) = match view {
+        TimelineView::Today => (today_start, today_start + time::Duration::days(1)),
+        TimelineView::Yesterday => (today_start - time::Duration::days(1), today_start),
     };
 
     // Build grouped timeline items
@@ -101,8 +125,10 @@ pub fn render_timeline(
         .sum();
     lines.push(Line::from(vec![
         Span::styled(
-            format!("{}", format_duration_human(total_time)),
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            format_duration_human(total_time),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(toggle_hint),
     ]));
@@ -155,7 +181,10 @@ pub fn render_timeline(
                     if entry.is_running() { " (running)" } else { "" }
                 );
 
-                lines.push(Line::from(Span::styled(entry_line, Style::default().fg(color))));
+                lines.push(Line::from(Span::styled(
+                    entry_line,
+                    Style::default().fg(color),
+                )));
 
                 if !notes.is_empty() {
                     lines.push(Line::from(Span::styled(
@@ -191,17 +220,7 @@ pub fn render_timeline(
         }
     }
 
-    // Apply scroll
-    let scrolled_lines: Vec<Line> = lines.into_iter().skip(scroll).collect();
-
-    let view_title = format!(" {} ", view_label);
-    let timeline = Paragraph::new(scrolled_lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(view_title)
-            .border_style(border_style),
-    );
-    frame.render_widget(timeline, area);
+    lines
 }
 
 /// Builds a grouped timeline from entries, merging consecutive entries for the same project
@@ -215,9 +234,7 @@ fn build_grouped_timeline<'a>(
     // Filter entries for this day and sort by start time
     let mut day_entries: Vec<_> = entries
         .iter()
-        .filter(|(entry, _)| {
-            entry.start >= day_start && entry.start < day_end
-        })
+        .filter(|(entry, _)| entry.start >= day_start && entry.start < day_end)
         .collect();
     day_entries.sort_by_key(|(entry, _)| entry.start);
 
