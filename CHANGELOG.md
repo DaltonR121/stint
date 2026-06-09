@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-08
+
+### Added
+- Interactive **timeline panel** in the TUI dashboard — new three-panel layout (`Today | Timeline | This Week`)
+- Chronological per-entry blocks with consistent per-project colors and the day's total tracked time
+- **Session merging** — consecutive same-project entries within 5 minutes group into a single block (durations summed, notes combined and de-duplicated, running state preserved)
+- Idle markers for gaps longer than 2 minutes between sessions
+- Today / Yesterday toggle (`y` / `t`), scrollable with `↑/↓`, `Tab` to cycle panels
+
+### Fixed
+- Timeline day boundaries now use the local UTC offset, matching dashboard data fetching — evening entries no longer drop out of the timeline for non-UTC users
+- Timeline scrolling clamps to the exact rendered line count (no stranded bottom, no blank overscroll)
+- `unnecessary_sort_by` clippy lint on rust 1.96
+
 ## [0.2.2] — 2026-03-15
 
 ### Added
