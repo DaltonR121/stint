@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Internal build tasks for stint (not published)"
+
+[dependencies]
+pulldown-cmark = "0.13"
