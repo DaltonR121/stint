@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/stint-core", "crates/stint-cli", "crates/stint-server"]
+members = ["crates/stint-core", "crates/stint-cli", "crates/stint-server", "xtask"]
 
 [workspace.package]
 version = "0.3.0"
