@@ -759,6 +759,34 @@ mod tests {
     }
 
     #[test]
+    fn exit_with_session_id_ends_session_and_stops_entry() {
+        let storage = setup();
+        create_project(&storage, "my-app", "/home/user/my-app");
+
+        let action = handle_hook(
+            &storage,
+            1234,
+            Path::new("/home/user/my-app"),
+            None,
+            &test_config(),
+        )
+        .unwrap();
+
+        let session_id = match action {
+            HookAction::SessionStarted { session_id, .. } => session_id,
+            _ => panic!("expected SessionStarted"),
+        };
+
+        handle_hook_exit(&storage, 1234, Some(&session_id), &test_config()).unwrap();
+
+        // Session should be ended
+        assert!(storage.get_session_by_pid(1234).unwrap().is_none());
+
+        // Entry should be stopped
+        assert!(storage.get_any_running_entry().unwrap().is_none());
+    }
+
+    #[test]
     fn exit_in_merge_mode_keeps_entry_if_other_sessions() {
         let storage = setup();
         create_project(&storage, "my-app", "/home/user/my-app");
