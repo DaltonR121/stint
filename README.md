@@ -312,6 +312,7 @@ Thanks to these wonderful people ([emoji key](https://allcontributors.org/docs/e
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/DaltonR121"><img src="https://avatars.githubusercontent.com/u/24722493?v=4?s=100" width="100px;" alt="Ryan Dalton"/><br /><sub><b>Ryan Dalton</b></sub></a><br /><a href="https://github.com/DaltonR121/stint/commits?author=DaltonR121" title="Code">💻</a> <a href="https://github.com/DaltonR121/stint/commits?author=DaltonR121" title="Documentation">📖</a> <a href="#maintenance-DaltonR121" title="Maintenance">🚧</a> <a href="#infra-DaltonR121" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/TheShield2594"><img src="https://avatars.githubusercontent.com/u/82059300?v=4?s=100" width="100px;" alt="TheShield2594"/><br /><sub><b>TheShield2594</b></sub></a><br /><a href="https://github.com/DaltonR121/stint/commits?author=TheShield2594" title="Code">💻</a></td>
     </tr>
   </tbody>
   <tfoot>
