@@ -4,17 +4,18 @@ Thanks for your interest in Stint!
 
 ## How This Project Works
 
-Stint is a **solo-maintained project** by [Ryan Dalton](https://github.com/DaltonR121). I build and maintain it myself and plan to keep it that way.
+Stint is maintained by [Ryan Dalton](https://github.com/DaltonR121). Contributions are welcome, with one ask: **talk before you build anything non-trivial.**
 
-**I welcome:**
+**Welcome any time:**
 - Bug reports
 - Feature requests and ideas
 - Questions and feedback
+- Small pull requests — typo fixes, docs improvements, obvious bug fixes
 
-**I don't accept:**
-- Pull requests (with rare exceptions for trivial fixes like typos)
+**Open an issue first:**
+- New features, behavior changes, refactors, or anything beyond a small fix
 
-This isn't a reflection on anyone's code quality — I just prefer to build this myself. If you have an idea for a feature, open an issue and describe the problem you're trying to solve. If it fits the project's direction, I'll build it.
+Opening an issue before a larger PR isn't a hoop to jump through — it's so we can agree on the problem and the approach before you spend time on code that might not fit the project's direction. Describe the **problem** you're solving (not just the solution you have in mind), and I'll let you know whether it fits the roadmap and how best to approach it.
 
 ## Reporting Bugs
 
@@ -26,6 +27,33 @@ This isn't a reflection on anyone's code quality — I just prefer to build this
 
 1. Open an issue describing the **problem** you're trying to solve (not just the solution you want)
 2. I'll respond with whether it fits the roadmap and when I might get to it
+
+## Submitting Pull Requests
+
+For a small fix, or once an issue has settled the approach for a larger change:
+
+1. Fork the repo and branch from `main` (`fix/...`, `feat/...`, or `chore/...`).
+2. Make the change **with tests** — every feature and bug fix ships with a test.
+3. Run the full quality gate locally before pushing — all four must pass:
+   ```sh
+   cargo build
+   cargo test
+   cargo clippy -- -D warnings
+   cargo fmt --check
+   ```
+4. Open the PR against `main`. CI runs the same gate, and the maintainer is automatically requested for review.
+5. Keep PRs small and focused — one fix or one feature per PR.
+
+Shell hooks (`stint _hook`) are on a hot path and must stay fast (<2ms), so be mindful of work added there.
+
+## Recognition
+
+Every contribution is credited. Merged PRs appear in the auto-generated release
+notes, and contributors of all kinds (code, docs, bug reports, ideas) are added
+to the [Contributors](README.md#contributors) list via the
+[all-contributors](https://allcontributors.org) bot — comment
+`@all-contributors please add @username for code` on any issue or PR to add
+someone.
 
 ## Forking
 

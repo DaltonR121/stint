@@ -5,6 +5,9 @@
 ![Status: Alpha](https://img.shields.io/badge/status-alpha-yellow)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/stint-cli)](https://crates.io/crates/stint-cli)
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+[![All Contributors](https://img.shields.io/github/all-contributors/DaltonR121/stint?color=ee8449&style=flat-square)](#contributors)
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 Stint is an open-source, local-first time tracker built in Rust. Its killer feature: **automatic time tracking via shell hooks**. Open a terminal in a project directory and the clock starts. Switch projects — it switches too. Close the last terminal — it stops. No buttons to click, no browser tabs to manage.
 
@@ -294,9 +297,31 @@ stint/
 
 ## Contributing
 
-Stint is solo-maintained by [Ryan Dalton](https://github.com/DaltonR121). Bug reports and feature requests are welcome — pull requests are not. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Stint is maintained by [Ryan Dalton](https://github.com/DaltonR121), and contributions are welcome. Small fixes — typos, docs, obvious bugs — can go straight to a pull request. For anything larger, please open an issue first so we can agree on the approach before you invest time in code. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
-The MIT license means you're free to fork and build your own version.
+The MIT license also means you're free to fork and build your own version.
+
+## Contributors
+
+Thanks to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/DaltonR121"><img src="https://avatars.githubusercontent.com/u/24722493?v=4?s=100" width="100px;" alt="Ryan Dalton"/><br /><sub><b>Ryan Dalton</b></sub></a><br /><a href="https://github.com/DaltonR121/stint/commits?author=DaltonR121" title="Code">💻</a> <a href="https://github.com/DaltonR121/stint/commits?author=DaltonR121" title="Documentation">📖</a> <a href="#maintenance-DaltonR121" title="Maintenance">🚧</a> <a href="#infra-DaltonR121" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification — contributions of any kind are welcome and recognized here.
 
 ## Security
 
