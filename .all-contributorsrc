@@ -1,0 +1,40 @@
+{
+  "projectName": "stint",
+  "projectOwner": "DaltonR121",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitConvention": "none",
+  "contributorsPerLine": 7,
+  "contributorsSortAlphabetically": false,
+  "badgeTemplate": "[![All Contributors](https://img.shields.io/github/all-contributors/DaltonR121/stint?color=ee8449&style=flat-square)](#contributors)",
+  "contributors": [
+    {
+      "login": "DaltonR121",
+      "name": "Ryan Dalton",
+      "avatar_url": "https://avatars.githubusercontent.com/u/24722493?v=4",
+      "profile": "https://github.com/DaltonR121",
+      "contributions": [
+        "code",
+        "doc",
+        "maintenance",
+        "infra"
+      ]
+    },
+    {
+      "login": "TheShield2594",
+      "name": "TheShield2594",
+      "avatar_url": "https://avatars.githubusercontent.com/u/82059300?v=4",
+      "profile": "https://github.com/TheShield2594",
+      "contributions": [
+        "code"
+      ]
+    }
+  ],
+  "skipCi": true,
+  "linkToUsage": true
+}

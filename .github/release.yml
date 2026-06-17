@@ -1,0 +1,28 @@
+# Configures GitHub's auto-generated release notes (release.yml uses
+# softprops/action-gh-release with generate_release_notes: true).
+# Pull requests are grouped by label; a "New Contributors" section is
+# appended automatically by GitHub for first-time contributors.
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: ✨ Features
+      labels:
+        - enhancement
+        - feature
+    - title: 🐛 Bug Fixes
+      labels:
+        - bug
+        - fix
+    - title: 📖 Documentation
+      labels:
+        - documentation
+    - title: 🧰 Maintenance & CI
+      labels:
+        - chore
+        - ci
+        - dependencies
+    - title: Other Changes
+      labels:
+        - "*"
