@@ -74,9 +74,7 @@ fn render_error_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let bar = Paragraph::new(Line::from(vec![Span::styled(
         text,
-        Style::default()
-            .fg(Color::Red)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
     )]));
     frame.render_widget(bar, area);
 }
