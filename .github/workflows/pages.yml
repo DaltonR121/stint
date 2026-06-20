@@ -8,13 +8,6 @@ on:
       - site/**
       - xtask/**
       - .github/workflows/pages.yml
-  pull_request:
-    branches: [main]
-    paths:
-      - README.md
-      - site/**
-      - xtask/**
-      - .github/workflows/pages.yml
   workflow_dispatch:
 
 env:
