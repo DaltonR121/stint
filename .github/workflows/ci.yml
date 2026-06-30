@@ -3,6 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
+  # Stint is a PUBLIC repo with external contributors, so it is an explicit
+  # exception to the org-wide "push-to-main only" CI policy. Contributor PRs
+  # never pass through the maintainer's local gate, so the required checks
+  # (Check/Test/Clippy/Format/Docs) must run on PRs to actually gate them.
+  # Public repos get unlimited Actions minutes, so there is no cost downside.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
