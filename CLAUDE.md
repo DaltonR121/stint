@@ -25,6 +25,19 @@ cargo fmt --check
 ```
 All four must pass before committing.
 
+## CI exception: PRs ARE gated here (unlike the rest of the org)
+
+The org-wide policy (`/Projects/CLAUDE.md`) runs CI on push-to-main only, on the
+premise that the maintainer runs the full gate locally before every push so a
+per-PR run is redundant. **That premise does not hold for stint** — it is a
+PUBLIC repo with external contributors whose PRs never pass through the
+maintainer's local gate (a `cargo fmt` failure reached PR #45 this way). So
+`ci.yml` keeps a `pull_request` trigger, and `main`'s branch protection requires
+the `Check / Test / Clippy / Format / Docs` checks to pass on every PR. Public
+repos get unlimited Actions minutes, so there is no cost downside. Do not strip
+the `pull_request` trigger to "comply" with the org policy — this exception is
+deliberate.
+
 ## License
 MIT — free to use, modify, and distribute.
 
