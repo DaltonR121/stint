@@ -232,3 +232,97 @@ fn render_footer(frame: &mut Frame, area: Rect) {
     ]));
     frame.render_widget(footer, area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::app::TimelineView;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use stint_core::storage::SqliteStorage;
+
+    /// Renders the dashboard into an off-screen buffer and returns it as text.
+    ///
+    /// @param app - The dashboard state to draw.
+    /// @returns The rendered terminal contents, one line per row.
+    fn render_to_lines(app: &App) -> Vec<String> {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| render(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// A dashboard backed by an empty in-memory database.
+    fn empty_app() -> App {
+        App::new(SqliteStorage::open_in_memory().unwrap())
+    }
+
+    #[test]
+    fn idle_dashboard_draws_header_and_footer_chrome() {
+        let lines = render_to_lines(&empty_app());
+        let screen = lines.join("\n");
+
+        assert!(
+            screen.contains("Idle"),
+            "header should show idle status, got:\n{screen}"
+        );
+        assert!(
+            screen.contains("Today"),
+            "main area should label the Today panel, got:\n{screen}"
+        );
+        assert!(
+            screen.contains('q'),
+            "footer should list the quit key, got:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn every_panel_renders_without_panicking() {
+        for panel in [Panel::Today, Panel::Timeline, Panel::Week] {
+            let mut app = empty_app();
+            app.selected_panel = panel;
+
+            let lines = render_to_lines(&app);
+
+            assert_eq!(lines.len(), 24, "{panel:?} should fill all 24 rows");
+            assert!(
+                lines.iter().any(|line| !line.is_empty()),
+                "{panel:?} rendered a blank screen"
+            );
+        }
+    }
+
+    #[test]
+    fn timeline_renders_for_both_day_windows() {
+        for view in [TimelineView::Today, TimelineView::Yesterday] {
+            let mut app = empty_app();
+            app.selected_panel = Panel::Timeline;
+            app.timeline_view = view;
+
+            let lines = render_to_lines(&app);
+
+            assert_eq!(lines.len(), 24, "{view:?} should fill all 24 rows");
+        }
+    }
+
+    #[test]
+    fn error_bar_claims_a_row_and_shows_the_message() {
+        let mut app = empty_app();
+        app.error_message = Some("database is locked".to_string());
+
+        let screen = render_to_lines(&app).join("\n");
+
+        assert!(
+            screen.contains("database is locked"),
+            "error bar should surface the message, got:\n{screen}"
+        );
+    }
+}
