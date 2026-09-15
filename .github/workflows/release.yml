@@ -160,9 +160,10 @@ jobs:
           node-version: '24'
 
       - name: Install pnpm
+        # Version comes from editors/vscode/package.json "packageManager".
         uses: pnpm/action-setup@v6
         with:
-          version: 10
+          package_json_file: editors/vscode/package.json
 
       - name: Build and publish extension
         run: |
